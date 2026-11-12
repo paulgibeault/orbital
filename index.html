@@ -146,7 +146,7 @@ const T = {
   warpMax: 8, warpLead: 2.5, ripZoom: 1.25,
   btScale: 0.3, btMax: 3, perfectBoost: 1.5,   // slingshot bullet-time: time ×0.3 at the bottom of a fast pass (≤3 s); perfect kicks ×1.5   // F: warp up to ×8, braking so events arrive ≥2.5 s real-time away
   forecastH: 10, camScale: 1,   // forecast horizon (s); camera zoom scale for the level
-  tipWindow: 30, par: 25,       // seconds: tip runs out / ★ for a delivery at or under par
+  tipWindow: 30, par: 25, expressLimit: 45,       // seconds: tip runs out / ★ for a delivery at or under par
   step: 1 / 240,
 };
 
@@ -198,7 +198,7 @@ const LEVELS = {
        intro: 'Walk to the parcel, hop toward Pip — mid-air, Q to ring Pip, hold Shift to anchor' },
   2: { name: 'Outer Run', build: buildL2, start: () => dock, dust: [2480, 2900, 650], streams: [[1320, 2.0], [1680, 4.4], [2700, 0.6], [3600, 3.0]],
        T: { sunDens: 60, worldDens: 7, haloR: 4600, wallR: 4700, lostDist: 14000, coronaR: 300, sunSpit: 120,
-            jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90,
+            jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90, expressLimit: 150,
             anchorRange: 550, anchorAccel: 120, anchorDamp: 1.5 },   // anchor = landing gear: catches & settles you near a world, can't carry you between orbits
        assistT: { anchorRange: 650, anchorAccel: 240 },
        script: () => [[dock, ferry], [ferry, wisp], [wisp, lantern], [lantern, dock], [dock, tern]],
@@ -323,8 +323,11 @@ function newJob() {
   const rf = from.parent === hub ? from.R : from.parent ? from.parent.R : 0;
   const rt = to.parent === hub ? to.R : to.parent ? to.parent.R : 0;
   job = { from, to, ang: rand(0, TAU), state: 'wait', value: 15 + Math.round(Math.abs(rf - rt) / 40), t0: 0, style: 0, tNew: simT };
-  logEv('job', { from: from.name, to: to.name, value: job.value });
+  job.express = (expressCount++ % 2) === 0;   // free play alternates express contracts
+  logEv('job', { from: from.name, to: to.name, value: job.value, express: job.express });
+  if (job.express) toast(`⚡ EXPRESS: ${from.name} → ${to.name} — ${T.expressLimit}s for ×2.5 pay`, 'gain');
 }
+let expressCount = 0;
 
 function addStyle(pts, text, color) {
   const w = text.startsWith('PERFECT') ? 3 : text.startsWith('Slingshot') || text.startsWith('full orbit') ? 2 : 1;
@@ -342,7 +345,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 15,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 16,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -391,7 +394,9 @@ function land(b) {
   sfx.land(impact);
   if (job && job.state === 'carry' && b === job.to) {
     const tip = Math.max(0, Math.round(T.tipWindow - (simT - job.t0)) * (level === 2 ? 0.5 : 1)) | 0;
-    const pay = job.value + tip;
+    let pay = job.value + tip;
+    if (job.express) { pay = Math.round(pay * 2.5); toast(`⚡ EXPRESS delivered ×2.5 — +${pay}`, 'gain'); logEv('express_done', { t: +(simT - job.t0).toFixed(1) }); }
+    saveGhost(job, simT - job.t0);
     credits += pay; delivered++; lvlCount++;
     const carryT = simT - job.t0, smart = (job.slings || 0) > 0 || (job.perfect || 0) > 0 || (job.kicks || 0) <= 1;
     const stars = 1 + (carryT <= T.par ? 1 : 0) + (smart ? 1 : 0);
@@ -620,6 +625,8 @@ function step(dt) {
     P.vx = b.vx - uy * P.walkV; P.vy = b.vy + ux * P.walkV;
     if (job && job.state === 'wait' && b === job.from && Math.abs(angDiff(P.ang, job.ang)) * rr < 16) {
       job.state = 'carry'; job.t0 = simT; job.style = 0;
+      job.rec = []; job.ang0 = Math.atan2(b.y - hub.y, b.x - hub.x); job.recT = -1;   // ghost recording
+      if (job.express) toast(`⚡ Clock's running: ${T.expressLimit}s to ${job.to.name}`, 'gain');
       logEv('pickup', { at: b.name, wait: +(simT - job.tNew).toFixed(1) });
       popup(P.x, P.y, 'Got it! → ' + job.to.name, '#ffd28a');
     }
@@ -890,6 +897,37 @@ function comboEnd(reason) {
     logEv('combo_end', { hits: COMBO.hits, mult: +COMBO.mult.toFixed(1), pts: COMBO.pts, reason });
   }
   COMBO.n = 0; COMBO.hits = 0; COMBO.mult = 1; COMBO.t = 0; COMBO.pts = 0;
+}
+
+// ---------------- ghost routes ----------------
+// Your fastest delivery on each route replays as a ghost (rotated so its start lines up with today's pickup world).
+let GHOSTS = {};
+try { GHOSTS = JSON.parse(localStorage.getItem('oc-ghosts') || '{}') || {}; } catch (e) { GHOSTS = {}; }
+const ghostKey = j => `L${level}:${j.from.name}>${j.to.name}`;
+function recordGhost() {
+  if (!job || job.state !== 'carry' || !job.rec) return;
+  const t = simT - job.t0; if (t - job.recT < 0.1 || job.rec.length > 8000) return;
+  job.recT = t; job.rec.push([+t.toFixed(2), Math.round(P.x - hub.x), Math.round(P.y - hub.y)]);
+}
+function saveGhost(j, t) {
+  if (!j.rec || j.rec.length < 3) return;
+  const key = ghostKey(j), best = GHOSTS[key];
+  if (best && t >= best.t) { toast(`Ghost: ${t.toFixed(1)}s · best ${best.t.toFixed(1)}s (+${(t - best.t).toFixed(1)}s)`); return; }
+  const stride = Math.max(1, Math.ceil(j.rec.length / 700));
+  GHOSTS[key] = { t, ang0: j.ang0, pts: j.rec.filter((_, i) => i % stride === 0 || i === j.rec.length - 1) };
+  try { localStorage.setItem('oc-ghosts', JSON.stringify(GHOSTS)); } catch (e) {}
+  toast(best ? `🏁 New best route! ${t.toFixed(1)}s (−${(best.t - t).toFixed(1)}s)` : `🏁 Route record set: ${t.toFixed(1)}s — your ghost will race you next time`, 'good');
+  logEv('ghost_best', { key, t: +t.toFixed(1), prev: best ? +best.t.toFixed(1) : null });
+}
+function ghostNow() {   // → {g, x, y, done, pts (rotated)} or null
+  if (!job || job.state !== 'carry' || job.ang0 === undefined) return null;
+  const g = GHOSTS[ghostKey(job)]; if (!g) return null;
+  const e = simT - job.t0, d = job.ang0 - g.ang0, c = Math.cos(d), sn = Math.sin(d);
+  const rot = p => [hub.x + p[1] * c - p[2] * sn, hub.y + p[1] * sn + p[2] * c];
+  let i = 0; while (i < g.pts.length - 1 && g.pts[i + 1][0] < e) i++;
+  const a = g.pts[i], b = g.pts[Math.min(i + 1, g.pts.length - 1)], f = b[0] > a[0] ? clamp((e - a[0]) / (b[0] - a[0]), 0, 1) : 0;
+  const [ax, ay] = rot(a), [bx, by] = rot(b);
+  return { g, x: lerp(ax, bx, f), y: lerp(ay, by, f), done: e >= g.t, rot, e };
 }
 
 // ---------------- slingshot bullet-time ----------------
@@ -1517,6 +1555,16 @@ function draw() {
     if (BT.perfect) { const g = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, 30 * px); g.addColorStop(0, 'rgba(255,224,138,0.6)'); g.addColorStop(1, 'rgba(255,224,138,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(P.x, P.y, 30 * px, 0, TAU); ctx.fill(); }
   }
+  // ghost of your best run on this route
+  const gh = ghostNow();
+  if (gh) {
+    ctx.strokeStyle = 'rgba(200,220,255,0.12)'; ctx.lineWidth = 1.5 * px; ctx.setLineDash([3 * px, 6 * px]); ctx.beginPath();
+    gh.g.pts.forEach((p, i) => { const [x, y] = gh.rot(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = gh.done ? 'rgba(157,255,181,0.5)' : 'rgba(220,235,255,0.45)';
+    ctx.beginPath(); ctx.arc(gh.x, gh.y, T.playerR * 1.1, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(220,235,255,0.6)'; ctx.lineWidth = px; ctx.beginPath(); ctx.arc(gh.x, gh.y, T.playerR * 1.8, 0, TAU); ctx.stroke();
+    fcLabels.push([gh.x, gh.y - 14 * px, gh.done ? `ghost arrived · ${gh.g.t.toFixed(1)}s` : 'ghost', gh.done ? '#9dffb5' : '#dce8ff']);
+  }
   // plasma tail while ripping
   if (!P.on && (cam.rip > 0.05 || warp > 1.3)) {
     const vs = Math.hypot(P.vx, P.vy) || 1, hx = P.vx / vs, hy = P.vy / vs, nx = -hy, ny = hx;
@@ -1808,6 +1856,7 @@ const GUIDE = [
       <li><b>Inward</b>: launch <i>against</i> your world's motion, or <kbd>S</kbd> at Ap, or pass <i>in front</i> of a world.</li>
       <li><b>Missed?</b> Don't spam kicks. Look at the ellipse: is your Ap/Pe reaching the gold orbit? Fix the <i>size</i> first (W/S), then the <i>timing</i>.</li>
       <li><b>Combos:</b> grazes, slingshots, perfect kicks, stardust and full orbits chain within 10 s — style points multiply up to ×4. Landing ends the combo.</li>
+      <li><b>⚡ Express</b> contracts (free play): beat the clock for ×2.5 pay. Your best time per route races you as a <b>ghost</b>.</li>
       <li><b>☄ Comets</b> dive fast past the star on long ellipses. Their passes give big, fleeting slingshots — and you can ride one.</li>
       <li><b>✧ Stardust streams</b> ride natural circular orbits. Match a stream's orbit to sweep it up (+2 each, +25 for the whole stream).</li>
       <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). It brakes by itself before slingshots, arrivals and landings — just keep holding.</li>
@@ -1879,6 +1928,8 @@ function missionHTML() {
     <div class="pips">${Array.from({ length: T.levelGoal }, (_, i) => `<span class="${i < lvlCount ? 'on' : ''}"></span>`).join('')}</div>
     <div class="row"><span>Job ${Math.min(lvlCount + 1, T.levelGoal)} of ${T.levelGoal}${job && job.state === 'carry' ? ` · ${fmt(simT - job.t0)}s (par ${T.par})` : ''}</span><span>tip <b>${fmt(tipLeft)}s</b></span></div>
     <div class="bar"><i style="width:${(100 * tipLeft / T.tipWindow).toFixed(0)}%"></i></div>
+    ${job && job.express ? `<div class="row"><span class="warn"><b style="color:var(--warn)">⚡ EXPRESS ×2.5</b></span><span class="${job.state === 'carry' ? 'warn' : ''}">${job.state === 'carry' ? fmt(Math.max(0, T.expressLimit - (simT - job.t0))) + 's left' : T.expressLimit + 's once picked up'}</span></div>` : ''}
+    ${job && job.state !== 'done' && GHOSTS[ghostKey(job)] ? `<div class="row"><span>🏁 Route best</span><b>${GHOSTS[ghostKey(job)].t.toFixed(1)}s</b></div>` : ''}
     <div class="row" style="margin-top:8px"><span>Credits <b>${credits.toLocaleString()}</b></span><span>✧ <b>${stardust}</b> · Seeds <b>${seeds}</b></span></div>`;
 }
 function instrHTML() {
@@ -2000,6 +2051,10 @@ function frame(now) {
   if (paused) acc = 0; else acc += dt * warp * lerp(1, T.btScale, btAmt);   // bullet-time slows the sim
   while (acc >= T.step) { step(T.step); acc -= T.step; }
   if (planting) planting.t += dt;
+  recordGhost();
+  if (job && job.express && job.state === 'carry' && simT - job.t0 > T.expressLimit) {
+    job.express = false; toast(`Express window missed — it's a normal delivery now`); logEv('express_missed');
+  }
   if (!paused && job && job.state === 'done') { jobTimer -= dt; if (jobTimer <= 0) { newJob(); popup(P.x, P.y, `New job: ${job.from.name} → ${job.to.name}`, '#ffd28a'); } }
   const E = helioE(), rawGain = P.on || paused || !dt ? 0 : (E - P.Eprev) / dt / Math.max(50, Math.hypot(P.vx, P.vy));
   P.Eprev = E; P.gainS = (P.gainS || 0) + (rawGain - (P.gainS || 0)) * Math.min(1, dt * 8);   // smoothed
