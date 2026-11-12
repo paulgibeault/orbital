@@ -146,3 +146,13 @@ Playtest: 36-minute session with fast-forward held for 15.7 min (44%), so coasti
 7. **More impact:** shockwave rings (land/kick/bounce/slingshot/delivery), screen shake scaled to the event, atmosphere-limb flare and sparks
    when grazing, confetti on deliveries and level completion, hit-stop on perfect kicks.
 - Phase readout now only for near-circular co-orbits (it misfired on eccentric crossings).
+
+## Harder near events + chase cam (2026-11-11)
+User: "the slowdown near events makes it too simple… when really booking it, the camera should trail the ship looking towards the line of travel."
+- **Warp no longer auto-brakes.** A ⚠ callout + double-beep + red countdown fires when the next event is <3 s away in *real* time;
+  the player must release F. **Assist (G, now in both levels)** restores auto-brake + generous slow-mo (+ the long-range anchor in Level 2).
+- **Bullet-time is tougher:** ×0.55 (was ×0.3), ≤1.5 s per pass (was 3), perfect window |v_r|/v < 0.12 (was 0.2), and it doesn't
+  trigger if you enter the pass at warp >2.
+- **Chase cam:** engages on warp >1.6 *or* raw speed > ripSpeed (420 Level 1 / 380 Level 2). It looks along the forecast path until the road has
+  turned ~30° (not a fixed time ahead, which pointed across tight curves); the ship sits at ~75% height; the camera turns fast (rate 10)
+  so the line of travel stays within ~14° of straight up at ×8 (it was 40–85° off); zoom ≥0.6× (close behind, road ahead in view).

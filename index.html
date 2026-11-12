@@ -144,7 +144,8 @@ const T = {
   seedDens: 12, seedMinR: 10, seedMaxR: 36, seedGrow: 2.5, seedHold: 1.2,
   grazeAlt: 28, grazeSpeed: 180, slingMin: 15,
   warpMax: 8, warpLead: 2.5, ripZoom: 1.25,
-  btScale: 0.3, btMax: 3, perfectBoost: 1.5,   // slingshot bullet-time: time ×0.3 at the bottom of a fast pass (≤3 s); perfect kicks ×1.5   // F: warp up to ×8, braking so events arrive ≥2.5 s real-time away
+  btScale: 0.55, btMax: 1.5, perfectNear: 0.12, perfectBoost: 1.5,   // slingshot bullet-time (Assist: ×0.3, 3 s, wider window)
+  warnLead: 3, ripSpeed: 420,   // warp warns ~3 s (real) before action — YOU let go (Assist auto-brakes); chase cam above this speed×warp
   forecastH: 10, camScale: 1,   // forecast horizon (s); camera zoom scale for the level
   tipWindow: 30, par: 25, expressLimit: 45,       // seconds: tip runs out / ★ for a delivery at or under par
   step: 1 / 240,
@@ -194,11 +195,12 @@ const BASE_T = Object.assign({}, T);
 const LEVELS = {
   1: { name: 'Courier', build: buildL1, start: () => kettle, dust: [1760, 2040, 420], streams: [[700, 1.0], [1340, 3.6], [2120, 5.6]],
        T: {},   // the base tuning above
+       assistT: {},   // Assist in Level 1 = auto-brake warp + generous slingshot slow-mo
        script: () => [[kettle, pip], [pip, brindle], [brindle, kettle], [kettle, ada], [bo, outpost]],
        intro: 'Walk to the parcel, hop toward Pip — mid-air, Q to ring Pip, hold Shift to anchor' },
   2: { name: 'Outer Run', build: buildL2, start: () => dock, dust: [2480, 2900, 650], streams: [[1320, 2.0], [1680, 4.4], [2700, 0.6], [3600, 3.0]],
        T: { sunDens: 60, worldDens: 7, haloR: 4600, wallR: 4700, lostDist: 14000, coronaR: 300, sunSpit: 120,
-            jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90, expressLimit: 150,
+            ripSpeed: 380, jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90, expressLimit: 150,
             anchorRange: 550, anchorAccel: 120, anchorDamp: 1.5 },   // anchor = landing gear: catches & settles you near a world, can't carry you between orbits
        assistT: { anchorRange: 650, anchorAccel: 240 },
        script: () => [[dock, ferry], [ferry, wisp], [wisp, lantern], [lantern, dock], [dock, tern]],
@@ -355,7 +357,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 17,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 18,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -951,16 +953,18 @@ function bulletTime() {
   const b = P.pass.b; if (b === hub || b.seed || !bodies.includes(b)) return null;
   const rx = P.x - b.x, ry = P.y - b.y, d = Math.hypot(rx, ry) || 1, alt = d - b.r;
   const vx = P.vx - b.vx, vy = P.vy - b.vy, v = Math.hypot(vx, vy);
-  if (v < 120 || alt > passR(b) * 0.75 || (P.pass.bt || 0) > T.btMax) return null;
+  const btMax = assist ? 3 : T.btMax;
+  if (v < 120 || alt > passR(b) * 0.75 || (P.pass.bt || 0) > btMax) return null;
+  if (!assist && !P.pass.bt && warp > 2) return null;   // blasting through at warp? you miss the slow-mo
   const near = Math.abs(vx * rx + vy * ry) / d / v;   // 0 = exactly at closest approach
   if (near > 0.45) return null;
-  return { b, perfect: near < 0.2, alt, v, near };
+  return { b, perfect: near < (assist ? 0.2 : T.perfectNear), alt, v, near };
 }
 let btAmt = 0, BT = null;
 
 // ---------------- warp ----------------
 // Hold F: time ramps up to ×8 — and brakes on its own so the next slingshot / arrival / landing is ≥2.5 s away in real time.
-let warp = 1, braked = false;
+let warp = 1, braked = false, warnLeft = Infinity;
 function nextEvent() {
   const fc = FC.main; if (!fc || P.on) return null;
   // an event brakes warp until its moment has passed (lead = how early to be back at ×1)
@@ -988,30 +992,51 @@ function updateCamera(dt) {
   }
   if (cam.overview) { tx = hub.x; ty = hub.y; }
   // RIP CAM: while warping through a coast, swoop in behind the ship — it flies "up" the screen
-  const ripT = warp > 1.6 && !P.on && !cam.overview ? 1 : 0;
-  cam.rip += (ripT - cam.rip) * (1 - Math.exp(-dt * (ripT ? 2.2 : 4.5)));
-  const vs = Math.hypot(P.vx, P.vy) || 1, vhx = P.vx / vs, vhy = P.vy / vs;
+  // CHASE CAM: when you're really booking it (warp or raw speed), sit behind the ship and look down the line of travel
+  const vs = Math.hypot(P.vx, P.vy) || 1, vhx = P.vx / vs, vhy = P.vy / vs, booking = vs * warp;
+  const ripT = !P.on && !cam.overview && (warp > 1.6 || booking > T.ripSpeed) ? clamp((Math.max(booking, warp > 1.6 ? T.ripSpeed * 1.3 : 0) - T.ripSpeed * 0.8) / (T.ripSpeed * 0.4), 0, 1) : 0;
+  cam.rip += (ripT - cam.rip) * (1 - Math.exp(-dt * (ripT > cam.rip ? 2.2 : 3.5)));
+  // look point: where the forecast says you'll be a beat from now (curves with the path), else straight ahead
+  const lookT = clamp(1.4 * warp, 1.2, 10);
+  let lx = P.x + P.vx * lookT, ly = P.y + P.vy * lookT;
+  if (FC.main && FC.main.pts.length > 2) {   // walk the forecast until the road has turned ~30° (look down the bend, not across it)
+    const va = Math.atan2(P.vy, P.vx); let best = null;
+    for (const q of FC.main.pts) {
+      if (q[2] > lookT) break;
+      const qx = q[0] - P.x, qy = q[1] - P.y; if (qx * qx + qy * qy < 100) continue;
+      if (Math.abs(angDiff(Math.atan2(qy, qx), va)) > 0.52) break;
+      best = q;
+    }
+    if (best) { lx = best[0]; ly = best[1]; }
+  }
+  let ldx = lx - P.x, ldy = ly - P.y, LD = Math.hypot(ldx, ldy);
+  if (LD < 30) { ldx = vhx * 30; ldy = vhy * 30; LD = 30; }
+  cam.look = cam.look || [vhx, vhy];
+  const lk = 1 - Math.exp(-dt * 10); cam.look[0] += (ldx / LD - cam.look[0]) * lk; cam.look[1] += (ldy / LD - cam.look[1]) * lk;   // smooth the view direction
+  const lnx = cam.look[0] / (Math.hypot(cam.look[0], cam.look[1]) || 1), lny = cam.look[1] / (Math.hypot(cam.look[0], cam.look[1]) || 1);
   const k = 1 - Math.exp(-dt * (cam.overview ? 3 : 5));
   cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
-  if (cam.rip > 0.001) {   // lock on (no lag at ×8), ship sits low on screen looking ahead
-    const lead = 0.2 * H / T.ripZoom;
-    cam.x = lerp(cam.x, P.x + vhx * lead, cam.rip); cam.y = lerp(cam.y, P.y + vhy * lead, cam.rip);
+  if (cam.rip > 0.001) {   // trail the ship: it sits in the lower third, the road ahead fills the screen
+    const off = Math.min(0.55 * LD, 0.26 * H / Math.max(0.05, cam.zoom));
+    cam.x = lerp(cam.x, P.x + lnx * off, cam.rip); cam.y = lerp(cam.y, P.y + lny * off, cam.rip);
   }
+  cam.lookD = LD;
   const d = G0.dom, sp = Math.hypot(P.vx - d.vx, P.vy - d.vy);
   const alt = Math.hypot(P.x - d.x, P.y - d.y) - d.r;
   const far = P.on ? 1 : 0.85 * clamp(450 / (alt + 1), 0.4, 1);   // pull back on long swoops
   let tz = clamp(1.15 - sp / 800, 0.4, 1.15) * far * cam.bias * T.camScale;
   if (ft) tz = Math.max(0.05, Math.min(tz, frameZ));
   if (cam.overview) tz = Math.min(W, H) / (2.15 * systemR());
-  tz = lerp(tz, T.ripZoom * Math.sqrt(cam.bias), cam.rip);
+  const tzRip = clamp(Math.min(T.ripZoom * Math.sqrt(cam.bias), 0.9 * H / Math.max(1, cam.lookD)), 0.6 * Math.sqrt(cam.bias), T.ripZoom);   // close behind, road ahead in view
+  tz = lerp(tz, tzRip, cam.rip);
   cam.zoom += (tz - cam.zoom) * (1 - Math.exp(-dt * (cam.rip > 0.05 ? 3 : 2)));
   // up = away from the world you're standing on or anchored to; with no anchor the camera holds still
   let target = cam.rot;
   if (P.on) target = P.ang + Math.PI / 2;
   else if (P.anchor) target = Math.atan2(P.y - P.anchor.y, P.x - P.anchor.x) + Math.PI / 2;
-  if (cam.rip > 0.4) target = Math.atan2(vhy, vhx) + Math.PI / 2;   // velocity points up
+  if (cam.rip > 0.4 && cam.look) target = Math.atan2(cam.look[1], cam.look[0]) + Math.PI / 2;   // line of travel points up
   if (!cam.spin || cam.overview) target = 0;
-  cam.rot += angDiff(target, cam.rot) * (1 - Math.exp(-dt * (P.on ? 5 : cam.rip > 0.4 ? 3 : 1.5)));
+  cam.rot += angDiff(target, cam.rot) * (1 - Math.exp(-dt * (P.on ? 5 : cam.rip > 0.4 ? 10 : 1.5)));
 }
 function w2s(x, y) {
   const dx = (x - cam.x) * cam.zoom, dy = (y - cam.y) * cam.zoom, c = Math.cos(-cam.rot), s = Math.sin(-cam.rot);
@@ -1061,9 +1086,9 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB' && !panelOpen()) { showGuide(0); return; }
   if (e.code === 'Enter' && panelOpen()) { const act = panelAction; hidePanel(); if (act) act(); }
   if (e.code === 'Escape' && panelOpen()) hidePanel();
-  if (e.code === 'KeyG' && LEVELS[level].assistT) {
+  if (e.code === 'KeyG' && !panelOpen()) {
     assist = !assist; applyTuning(level); logEv('assist', { on: assist });
-    popup(P.x, P.y, assist ? 'Assist ON — long-range anchor' : 'Assist OFF — landing gear', '#9ad8ff');
+    toast(assist ? 'Assist ON — warp auto-brakes, generous slow-mo' + (level === 2 ? ', long-range anchor' : '') : 'Assist OFF — you call the shots', assist ? 'good' : 'gain');
   }
   if (e.code === 'KeyC') { cam.spin = !cam.spin; logEv('cam_spin', { on: cam.spin }); }
   if (e.code === 'KeyP') { forecastOn = !forecastOn; logEv('forecast', { on: forecastOn }); popup(P.x, P.y, 'forecast ' + (forecastOn ? 'on' : 'off'), '#cfe3ff'); }
@@ -1147,6 +1172,7 @@ const sfx = {
   sling: dv => { tone(dv > 0 ? 300 : 700, 0.7, 'sawtooth', 0.045, dv > 0 ? 2.6 : 0.4); noiseHit(0.6, dv > 0 ? 1800 : 600, 0.06, 0.6); },
   bounce: () => { tone(150, 0.45, 'sine', 0.24, 3); },
   brake: () => { tone(500, 0.5, 'sawtooth', 0.035, 0.45); },
+  warn: () => { tone(880, 0.12, 'square', 0.06); tone(880, 0.12, 'square', 0.06, 1, 0.18); },
   cancel: () => tone(320, 0.14, 'triangle', 0.08, 0.5),
   mote: () => tone(1400 + Math.random() * 700, 0.14, 'sine', 0.05),
   combo: n => tone(600 + 90 * Math.min(n, 12), 0.18, 'square', 0.04),
@@ -1841,7 +1867,7 @@ const GUIDE = [
       <li>The <b>motion streak</b> on each world's orbit shows which side is behind.</li>
       <li>The forecast labels the pass (<i>Anvil +80</i>) before you commit.</li>
       <li>Gas giants (◌) can't be landed on — they bounce you. Perfect slingshots.</li>
-      <li><b>Bullet-time:</b> at the bottom of a fast pass time slows. When the ring turns <b style="color:#ffe08a">gold</b>, kick (<kbd>W</kbd>) — a <b>PERFECT KICK</b> is ×${1.5} power.</li></ul>` },
+      <li><b>Bullet-time:</b> at the bottom of a fast pass time slows briefly — but only if you arrive at normal speed. When the ring turns <b style="color:#ffe08a">gold</b>, kick (<kbd>W</kbd>) — a <b>PERFECT KICK</b> is ×${1.5} power. The window is tight.</li></ul>` },
   { t: 'Timing: launch windows',
     svg: svg(`<circle class="o" cx="160" cy="105" r="40"/><circle class="o2" cx="160" cy="105" r="85"/><circle class="sun" cx="160" cy="105" r="9"/>
       <circle class="me" cx="200" cy="105" r="4.5"/><path class="p" d="M200 105 C 205 50, 150 18, 90 40 C 82 44, 78 48, 76 52" marker-end="url(#ah)"/>
@@ -1893,7 +1919,7 @@ const GUIDE = [
       <li><b>⚡ Express</b> contracts (free play): beat the clock for ×2.5 pay. Your best time per route races you as a <b>ghost</b>.</li>
       <li><b>☄ Comets</b> dive fast past the star on long ellipses. Their passes give big, fleeting slingshots — and you can ride one.</li>
       <li><b>✧ Stardust streams</b> ride natural circular orbits. Match a stream's orbit to sweep it up (+2 each, +25 for the whole stream).</li>
-      <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). It brakes by itself before slingshots, arrivals and landings — just keep holding.</li>
+      <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). A <b>⚠</b> warning sounds ~3 s before a slingshot, arrival or landing — <b>let go</b> in time or you blow through it. (<kbd>G</kbd> Assist brakes for you.)</li>
       <li>★ ratings: delivered · under par time · used a slingshot (or ≤1 kick).</li></ul>
       <span class="sub">Open this any time with <kbd>B</kbd>.</span>` },
 ];
@@ -1989,7 +2015,7 @@ function instrHTML() {
     <div class="row"><span>Speed</span><b>${fmt(sp)}</b></div>
     <div class="row"><span>Kicks</span><span>${Array.from({ length: T.kickMax }, (_, i) => `<span style="color:${i < P.kicks ? 'var(--warn)' : 'var(--faint)'}">●</span>`).join(' ')}${P.kicks < T.kickMax && !P.on ? ` <span class="sub">${(T.kickRecharge - P.kickT).toFixed(0)}s</span>` : ''}</span></div>
     <div class="row"><span>${LEVELS[level].assistT && !assist ? 'Landing gear' : 'Anchor'}</span><b class="${P.reach ? 'ok' : ''}">${P.anchor ? bname(P.anchor) + (P.reach ? ' · pulling' : '') : 'none in ' + fmt(T.anchorRange)}</b></div>
-    ${warp > 1.05 ? `<div class="row"><span class="warn">▶▶ warp ×${warp.toFixed(1)}</span><span class="sub">auto-brakes before action</span></div>` : ''}`;
+    ${warp > 1.05 ? `<div class="row"><span class="warn">▶▶ warp ×${warp.toFixed(1)}</span><span class="sub">${assist ? 'auto-brakes before action' : 'let go on ⚠'}</span></div>` : ''}`;
 }
 function keysHTML() {
   const k = (a, b) => `<div class="k"><span>${a}</span><span>${b}</span></div>`;
@@ -1997,9 +2023,9 @@ function keysHTML() {
   let h = (P.charging || P.kickCharging) ? k('<kbd>Esc</kbd>', `<span class="warn">cancel ${P.charging ? 'jump' : 'kick'}</span>`) : '';
   h += P.on ? k('<kbd>A</kbd><kbd>D</kbd>', 'walk') + k('<kbd>Space</kbd> hold', 'charge + preview') + k('release', 'jump')
     : k('<kbd>Space</kbd> hold', 'kick (longer = stronger)') + k('+<kbd>W</kbd> / <kbd>S</kbd>', 'prograde / retro') + k('+<kbd>A</kbd> / <kbd>D</kbd>', 'radial in / out') +
-      k('+arrows', 'screen aim') + k('<kbd>Shift</kbd> hold', `${gear} (${fmt(T.anchorRange)})`) + k('<kbd>Q</kbd>', 'switch catch target') + k('<kbd>F</kbd> hold', 'warp ×8 (auto-brakes)');
+      k('+arrows', 'screen aim') + k('<kbd>Shift</kbd> hold', `${gear} (${fmt(T.anchorRange)})`) + k('<kbd>Q</kbd>', 'switch catch target') + k('<kbd>F</kbd> hold', assist ? 'warp ×8 (auto-brakes)' : 'warp ×8 — let go on ⚠');
   h += '<div class="sep"></div>' + k('<kbd>B</kbd>', 'Flight School') + k('<kbd>Z</kbd> · <kbd>M</kbd>', 'overview · map') + k('<kbd>T</kbd>', 'theme: ' + TH.name) + k('<kbd>N</kbd>', SND.on ? 'sound on' : 'sound muted');
-  if (keysFull) h += k('<kbd>P</kbd>', 'forecast') + k('<kbd>V</kbd>', 'frame target') + k('<kbd>C</kbd>', 'camera spin') + k('<kbd>G</kbd>', 'assist (L2)') +
+  if (keysFull) h += k('<kbd>P</kbd>', 'forecast') + k('<kbd>V</kbd>', 'frame target') + k('<kbd>C</kbd>', 'camera spin') + k('<kbd>G</kbd>', 'assist: ' + (assist ? 'on' : 'off')) +
     k('click+hold', 'plant seed') + k('right-click', 'dig seed') + k('<kbd>X</kbd>', 'respawn') + k('wheel', 'zoom') + k('<kbd>L</kbd>', 'download log');
   h += k('<kbd>H</kbd>', keysFull ? 'fewer keys' : 'all keys');
   return `<div class="hdr">Controls<i>${P.on ? 'ground' : 'flight'}</i></div>${h}<div class="sep"></div><div class="sub" style="font-size:10px">● log ${LOG.status} · <kbd>L</kbd> download</div>`;
@@ -2015,8 +2041,9 @@ function updateHud() {
     : `<span class="tag">SLINGSHOT</span>Bottom of the pass at <b>${bname(BT.b)}</b> — the perfect window is coming…`;
   if (warp > 1.25 && !paused && !BT) {
     const ne = nextEvent(), sp = Math.round(Math.hypot(P.vx, P.vy));
-    c = `<span class="tag">WARP</span><span class="warpnum">×${warp.toFixed(1)}</span><span class="num">${sp} px/s</span>` +
-        (ne ? ` <span class="sub">· ${ne.label} in ${fmt(ne.t)}s</span>` : '');
+    const rl = ne ? ne.t / warp : Infinity, hot = rl < T.warnLead;
+    c = `<span class="tag">WARP${assist ? ' · ASSIST' : ''}</span><span class="warpnum">×${warp.toFixed(1)}</span><span class="num">${sp} px/s</span>` +
+        (ne ? ` <span class="${hot ? 'bad' : 'sub'}" style="${hot ? 'font-weight:700' : ''}">· ${hot ? '⚠ ' : ''}${ne.label} in ${rl.toFixed(1)}s${hot && !assist ? ' — let go!' : ''}</span>` : '');
   }
   coachEl.innerHTML = c ? (c.includes('class="tag"') ? c : `<span class="tag">COACH</span>${c}`) : '';
   coachEl.style.display = c ? 'block' : 'none';
@@ -2075,16 +2102,22 @@ function frame(now) {
   BT = bulletTime();
   if (BT && !paused) { P.pass.bt = (P.pass.bt || 0) + dt; if (BT.perfect && !P.pass.chimed) { P.pass.chimed = true; sfx.window(); } }
   btAmt += ((BT ? 1 : 0) - btAmt) * (1 - Math.exp(-dt * (BT ? 6 : 4)));
-  const cap = P.charging || P.kickCharging || P.reach || BT ? 1 : clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax);
+  const evCap = assist ? clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax) : T.warpMax;   // only Assist auto-brakes
+  const cap = P.charging || P.kickCharging || P.reach || BT ? 1 : evCap;
   const want = keys.ff && !paused ? cap : 1;
   warp += (want - warp) * (1 - Math.exp(-dt * (want > warp ? 1.5 : 7)));   // ramp up gently, brake hard
   if (warp < 1.01 && want === 1) warp = 1;
-  if (keys.ff && nev && warp > 2 && cap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); sfx.brake(); logEv('warp_slow', { label: nev.label }); }
-  if (cap > 4) braked = false;
+  const realLeft = nev ? nev.t / Math.max(1, warp) : Infinity;   // seconds of YOUR time until the action
+  warnLeft = keys.ff && warp > 1.5 ? realLeft : Infinity;
+  if (!assist && keys.ff && warp > 1.5 && realLeft < T.warnLead && !braked) {
+    braked = true; toast(`⚠ ${nev.label} in ${realLeft.toFixed(1)}s — let go of F`, 'bad'); sfx.warn(); logEv('warp_warn', { label: nev.label, warp: +warp.toFixed(1) });
+  }
+  if (assist && keys.ff && nev && warp > 2 && evCap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); sfx.brake(); logEv('warp_slow', { label: nev.label }); }
+  if (realLeft > T.warnLead * 2 || !keys.ff) braked = false;
   frameDt = dt;
   for (let i = RINGS.length - 1; i >= 0; i--) if ((RINGS[i].life -= dt) <= 0) RINGS.splice(i, 1);
   if (hitStop > 0) { hitStop -= dt; acc = 0; }   // a beat of freeze on a perfect kick
-  else if (paused) acc = 0; else acc += dt * warp * lerp(1, T.btScale, btAmt);   // bullet-time slows the sim
+  else if (paused) acc = 0; else acc += dt * warp * lerp(1, assist ? 0.3 : T.btScale, btAmt);   // bullet-time slows the sim
   while (acc >= T.step) { step(T.step); acc -= T.step; }
   if (planting) planting.t += dt;
   recordGhost();
