@@ -124,3 +124,25 @@ and higher orbits are slower, so you fall behind. **To catch a world ahead, slow
   Ferry 7/7, Lantern 6/7, Tern 6/7 (the misses were perturbed by Anvil). Typical power: 20–30% to catch up, 50–90% to wait.
   Level 1's outer orbits sit in the halo, where period barely changes with height, so one kick often can't reach green;
   the coach says so ("release anyway; you'll gain every lap").
+
+## Warp + fun pass (2026-11-11)
+Playtest: 36-minute session with fast-forward held for 15.7 min (44%), so coasting was the slow part.
+- **Warp (F):** ramps to ×8 and auto-brakes so the next slingshot, arrival, landing, bounce or catch window is ≥2.5 s away in real time
+  (with a callout). **Rip cam** while warping: close chase view aligned to velocity, speed lines along on-screen motion, plasma tail, shake.
+  Charging runs on real time; warp drops to ×1 while charging.
+- **Cancel:** Esc / Backspace cancels a jump or kick charge (nothing spent).
+1. **Slingshot bullet-time:** ×0.3 at the bottom of fast passes (≤3 s per pass); the gold "perfect window" ring; a PERFECT KICK is ×1.5 power
+   + style + a 90 ms hit-stop.
+2. **Synth sound** (WebAudio, no assets): warp wind, Doppler planet hum, kick thump, perfect chime, landings, delivery arpeggio + ★ notes,
+   slingshot sweeps. **N** mutes.
+3. **Stardust streams:** 14-mote clusters (~260 px of orbit, ±35 px) riding natural circular orbits; 75 px magnet; +2 per mote, +25 per stream.
+   The forecast rings the motes your path will sweep; it matched reality exactly in tests (aimed sweeps get 10–13 of 14).
+4. **Combo meter:** grazes, slingshots, perfect kicks, stardust, orbits and bounces chain within 10 s; style points ×(1 + 0.2·(n−1)), max ×4;
+   ends on landing or timeout with a summary.
+5. **Comets** on Kepler ellipses (Wanderer in Level 1: 420–2300 px, 64 s; Skipjack in Level 2: 820–4300 px, 80 s, 460 px/s at perihelion):
+   heavy-for-size, fleeting slingshots, rideable ("comet ride"), tails, perihelion callouts. The forecast solves Kepler every 8th step.
+6. **Express contracts** (free play, alternating): beat the clock (45 s / 150 s) for ×2.5 pay. **Ghost routes:** your best time per
+   level+route persists in localStorage and replays as a ghost, rotated to the current pickup world.
+7. **More impact:** shockwave rings (land/kick/bounce/slingshot/delivery), screen shake scaled to the event, atmosphere-limb flare and sparks
+   when grazing, confetti on deliveries and level completion, hit-stop on perfect kicks.
+- Phase readout now only for near-circular co-orbits (it misfired on eccentric crossings).
