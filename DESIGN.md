@@ -156,3 +156,12 @@ User: "the slowdown near events makes it too simple… when really booking it, t
 - **Chase cam:** engages on warp >1.6 *or* raw speed > ripSpeed (420 Level 1 / 380 Level 2). It looks along the forecast path until the road has
   turned ~30° (not a fixed time ahead, which pointed across tight curves); the ship sits at ~75% height; the camera turns fast (rate 10)
   so the line of travel stays within ~14° of straight up at ×8 (it was 40–85° off); zoom ≥0.6× (close behind, road ahead in view).
+
+## Unlimited boost, engine note, chromatic warp (2026-11-11)
+- **Kicks never run out** (`kickUnlimited`): charge and fire as often as you like; kicks are still counted for the ★ "smart" criterion.
+- **Engine base note replaces the warp wind:** root + octave + fifth + sub through a resonant lowpass. Pitch climbs ~1.6 octaves with warp
+  (+ a little with speed), sags in bullet-time, blips up on kicks; the filter opens with warp.
+- **Chromatic aberration at top speed:** when speed×warp exceeds ~1500 (full at ~2800) with the chase cam engaged, the frame's red channel
+  and green+blue channels are split apart and jittered, plus extra shake. Done with canvas `multiply` + `lighter` compositing
+  (no `ctx.filter`/CSS filters, for Safari); applied before labels and panels so text stays crisp.
+- Bug caught in testing: an edit put a `//` comment mid-line in the tuning block, silently commenting out kickMinPow/kickChargeTime (NaN kicks).
