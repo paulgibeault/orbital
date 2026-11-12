@@ -138,7 +138,8 @@ const T = {
   haloR: 1100, haloExp: 0.5,   // beyond this the sun's pull stops weakening (a 'halo' bowl): nothing escapes forever, big jumps become long swoops
   seedDens: 12, seedMinR: 10, seedMaxR: 36, seedGrow: 2.5, seedHold: 1.2,
   grazeAlt: 28, grazeSpeed: 180, slingMin: 15,
-  warpMax: 8, warpLead: 2.5, ripZoom: 1.25,   // F: warp up to ×8, braking so events arrive ≥2.5 s real-time away
+  warpMax: 8, warpLead: 2.5, ripZoom: 1.25,
+  btScale: 0.3, btMax: 3, perfectBoost: 1.5,   // slingshot bullet-time: time ×0.3 at the bottom of a fast pass (≤3 s); perfect kicks ×1.5   // F: warp up to ×8, braking so events arrive ≥2.5 s real-time away
   forecastH: 10, camScale: 1,   // forecast horizon (s); camera zoom scale for the level
   tipWindow: 30, par: 25,       // seconds: tip runs out / ★ for a delivery at or under par
   step: 1 / 240,
@@ -315,7 +316,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 10,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 11,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -363,7 +364,7 @@ function land(b) {
     const tip = Math.max(0, Math.round(T.tipWindow - (simT - job.t0)) * (level === 2 ? 0.5 : 1)) | 0;
     const pay = job.value + tip;
     credits += pay; delivered++; lvlCount++;
-    const carryT = simT - job.t0, smart = (job.slings || 0) > 0 || (job.kicks || 0) <= 1;
+    const carryT = simT - job.t0, smart = (job.slings || 0) > 0 || (job.perfect || 0) > 0 || (job.kicks || 0) <= 1;
     const stars = 1 + (carryT <= T.par ? 1 : 0) + (smart ? 1 : 0);
     levelStars += stars;
     toast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}  Delivered to ${b.name} · +${pay}`, 'good');
@@ -491,8 +492,15 @@ function kick(pow = 1) {
   gravAt(P.x, P.y, G0);
   const k = kickDir(); if (!k) return;
   const [dx, dy, mode] = k;
+  const bt = bulletTime(), perfect = !!(bt && bt.perfect);
+  if (perfect) pow *= T.perfectBoost;
   P.vx += dx * T.kick * pow; P.vy += dy * T.kick * pow;
   P.kicks--; P.kickT = 0;
+  if (perfect) {
+    addStyle(20, `PERFECT KICK at ${bname(bt.b)}`, '#ffe08a'); toast(`✦ PERFECT KICK ✦  ${bname(bt.b)} · ×${T.perfectBoost} power`, 'gain');
+    burst(P.x, P.y, '#ffe08a', 34, 260); cam.shake = Math.max(cam.shake, 6); logEv('perfect_kick', { body: bname(bt.b), pow: +pow.toFixed(2) });
+    if (job && job.state === 'carry') job.perfect = (job.perfect || 0) + 1;
+  }
   const ref = refBody();
   if (job && job.state === 'carry') job.kicks = (job.kicks || 0) + 1;
   logEv('kick', { mode, pow: +pow.toFixed(2), ref: bname(ref), ang: +Math.atan2(dy, dx).toFixed(2), speed: Math.hypot(P.vx, P.vy) | 0,
@@ -814,6 +822,20 @@ function updateForecast() {
 }
 const systemR = () => { let m = 0; for (const b of bodies) if (!b.ghost) m = Math.max(m, Math.hypot(b.x - hub.x, b.y - hub.y) + b.r); return m; };
 
+// ---------------- slingshot bullet-time ----------------
+// At the bottom of a fast pass (moving mostly sideways past a world, low and fast) time slows; that's the best moment to kick.
+function bulletTime() {
+  if (!P.pass || P.on || paused) return null;
+  const b = P.pass.b; if (b === hub || b.seed || !bodies.includes(b)) return null;
+  const rx = P.x - b.x, ry = P.y - b.y, d = Math.hypot(rx, ry) || 1, alt = d - b.r;
+  const vx = P.vx - b.vx, vy = P.vy - b.vy, v = Math.hypot(vx, vy);
+  if (v < 120 || alt > passR(b) * 0.75 || (P.pass.bt || 0) > T.btMax) return null;
+  const near = Math.abs(vx * rx + vy * ry) / d / v;   // 0 = exactly at closest approach
+  if (near > 0.45) return null;
+  return { b, perfect: near < 0.2, alt, v, near };
+}
+let btAmt = 0, BT = null;
+
 // ---------------- warp ----------------
 // Hold F: time ramps up to ×8 — and brakes on its own so the next slingshot / arrival / landing is ≥2.5 s away in real time.
 let warp = 1, braked = false;
@@ -1090,7 +1112,7 @@ function draw() {
 
   // world space
   ctx.save();
-  const shk = cam.rip * Math.min(1, warp / T.warpMax) * 1.6;
+  const shk = cam.rip * Math.min(1, warp / T.warpMax) * 1.6 + cam.shake;
   ctx.translate(W / 2 + Math.sin(simT * 61) * shk, H / 2 + Math.cos(simT * 47) * shk);
   ctx.scale(cam.zoom, cam.zoom); ctx.rotate(-cam.rot); ctx.translate(-cam.x, -cam.y);
   const px = 1 / cam.zoom;
@@ -1262,6 +1284,14 @@ function draw() {
   for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(p.x - 1.5 * px, p.y - 1.5 * px, 3 * px, 3 * px); }
   ctx.globalAlpha = 1;
 
+  // bullet-time: ring at your altitude around the world; glows gold inside the perfect window
+  if (BT && btAmt > 0.05) {
+    const b = BT.b, rr = Math.hypot(P.x - b.x, P.y - b.y), col = BT.perfect ? '#ffe08a' : TH.accent2;
+    ctx.strokeStyle = withAlpha(col, (BT.perfect ? 0.85 : 0.35) * btAmt); ctx.lineWidth = (BT.perfect ? 3 : 1.5) * px;
+    ctx.setLineDash(BT.perfect ? [] : [6 * px, 6 * px]); ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    if (BT.perfect) { const g = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, 30 * px); g.addColorStop(0, 'rgba(255,224,138,0.6)'); g.addColorStop(1, 'rgba(255,224,138,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(P.x, P.y, 30 * px, 0, TAU); ctx.fill(); }
+  }
   // plasma tail while ripping
   if (!P.on && (cam.rip > 0.05 || warp > 1.3)) {
     const vs = Math.hypot(P.vx, P.vy) || 1, hx = P.vx / vs, hy = P.vy / vs, nx = -hy, ny = hx;
@@ -1359,6 +1389,11 @@ function draw() {
     ctx.globalAlpha = clamp(2.2 - p.t, 0, 1); ctx.fillStyle = p.color; ctx.fillText(p.text, sx, sy - 24 - p.t * 30);
   }
   ctx.globalAlpha = 1;
+  if (btAmt > 0.03) {   // bullet-time vignette
+    const bv = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.7);
+    bv.addColorStop(0, 'rgba(0,0,0,0)'); bv.addColorStop(1, `rgba(255,200,110,${0.22 * btAmt})`);
+    ctx.fillStyle = bv; ctx.fillRect(0, 0, W, H);
+  }
   // speed lines: the world rushing past while you rip
   if (cam.rip > 0.04) {
     const vsp = Math.hypot(P.vx, P.vy) || 1, scrSpeed = vsp * warp * cam.zoom;   // screen px/s
@@ -1496,7 +1531,8 @@ const GUIDE = [
       <ul><li>Closer = bigger effect. The faint dashed ring is the slingshot zone.</li>
       <li>The <b>motion streak</b> on each world's orbit shows which side is behind.</li>
       <li>The forecast labels the pass (<i>Anvil +80</i>) before you commit.</li>
-      <li>Gas giants (◌) can't be landed on — they bounce you. Perfect slingshots.</li></ul>` },
+      <li>Gas giants (◌) can't be landed on — they bounce you. Perfect slingshots.</li>
+      <li><b>Bullet-time:</b> at the bottom of a fast pass time slows. When the ring turns <b style="color:#ffe08a">gold</b>, kick (<kbd>W</kbd>) — a <b>PERFECT KICK</b> is ×${1.5} power.</li></ul>` },
   { t: 'Timing: launch windows',
     svg: svg(`<circle class="o" cx="160" cy="105" r="40"/><circle class="o2" cx="160" cy="105" r="85"/><circle class="sun" cx="160" cy="105" r="9"/>
       <circle class="me" cx="200" cy="105" r="4.5"/><path class="p" d="M200 105 C 205 50, 150 18, 90 40 C 82 44, 78 48, 76 52" marker-end="url(#ah)"/>
@@ -1659,7 +1695,10 @@ function updateHud() {
   instrEl.innerHTML = instrHTML();
   keysEl.innerHTML = keysHTML();
   let c = coachText();
-  if (warp > 1.25 && !paused) {
+  if (BT && !paused) c = BT.perfect
+    ? `<span class="tag">SLINGSHOT</span><b style="color:#ffe08a">✦ PERFECT WINDOW ✦</b> — kick now (<kbd>W</kbd> + <kbd>Space</kbd>) for ×${T.perfectBoost} power at ${bname(BT.b)}`
+    : `<span class="tag">SLINGSHOT</span>Bottom of the pass at <b>${bname(BT.b)}</b> — the perfect window is coming…`;
+  if (warp > 1.25 && !paused && !BT) {
     const ne = nextEvent(), sp = Math.round(Math.hypot(P.vx, P.vy));
     c = `<span class="tag">WARP</span><span class="warpnum">×${warp.toFixed(1)}</span><span class="num">${sp} px/s</span>` +
         (ne ? ` <span class="sub">· ${ne.label} in ${fmt(ne.t)}s</span>` : '');
@@ -1713,14 +1752,17 @@ function frame(now) {
     if (P.kickCharging && !P.on) P.kickCharge = Math.min(1, P.kickCharge + dt / T.kickChargeTime);
   }
   const nev = paused ? null : nextEvent();
-  const cap = P.charging || P.kickCharging || P.reach ? 1 : clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax);
+  BT = bulletTime();
+  if (BT && !paused) P.pass.bt = (P.pass.bt || 0) + dt;
+  btAmt += ((BT ? 1 : 0) - btAmt) * (1 - Math.exp(-dt * (BT ? 6 : 4)));
+  const cap = P.charging || P.kickCharging || P.reach || BT ? 1 : clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax);
   const want = keys.ff && !paused ? cap : 1;
   warp += (want - warp) * (1 - Math.exp(-dt * (want > warp ? 1.5 : 7)));   // ramp up gently, brake hard
   if (warp < 1.01 && want === 1) warp = 1;
   if (keys.ff && nev && warp > 2 && cap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); logEv('warp_slow', { label: nev.label }); }
   if (cap > 4) braked = false;
   frameDt = dt;
-  if (paused) acc = 0; else acc += dt * warp;
+  if (paused) acc = 0; else acc += dt * warp * lerp(1, T.btScale, btAmt);   // bullet-time slows the sim
   while (acc >= T.step) { step(T.step); acc -= T.step; }
   if (planting) planting.t += dt;
   if (!paused && job && job.state === 'done') { jobTimer -= dt; if (jobTimer <= 0) { newJob(); popup(P.x, P.y, `New job: ${job.from.name} → ${job.to.name}`, '#ffd28a'); } }
@@ -1732,6 +1774,7 @@ function frame(now) {
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
   for (const p of popups) p.t += dt;
   for (let i = popups.length - 1; i >= 0; i--) if (popups[i].t > 2.2) popups.splice(i, 1);
+  cam.shake *= Math.exp(-dt * 9); if (cam.shake < 0.05) cam.shake = 0;
   updateCamera(dt);
   updateForecast();
   draw();
