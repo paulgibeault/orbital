@@ -316,7 +316,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 11,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 12,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -360,6 +360,7 @@ function land(b) {
   P.walkV = clamp((rx * -Math.sin(a) + ry * Math.cos(a)) * 0.4, -T.walk, T.walk);
   P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
   if (impact > 120) burst(P.x, P.y, b.color, 10, impact * 0.3);
+  sfx.land(impact);
   if (job && job.state === 'carry' && b === job.to) {
     const tip = Math.max(0, Math.round(T.tipWindow - (simT - job.t0)) * (level === 2 ? 0.5 : 1)) | 0;
     const pay = job.value + tip;
@@ -367,7 +368,7 @@ function land(b) {
     const carryT = simT - job.t0, smart = (job.slings || 0) > 0 || (job.perfect || 0) > 0 || (job.kicks || 0) <= 1;
     const stars = 1 + (carryT <= T.par ? 1 : 0) + (smart ? 1 : 0);
     levelStars += stars;
-    toast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}  Delivered to ${b.name} · +${pay}`, 'good');
+    toast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}  Delivered to ${b.name} · +${pay}`, 'good'); sfx.deliver(stars);
     if (stars < 3) setTimeout(() => toast(carryT > T.par ? `★ for under ${T.par}s door-to-door` : `★ for a slingshot or ≤1 kick`, ''), 400);
     logEv('deliver', { stars, kicks: job.kicks || 0, slings: job.slings || 0, to: bname(b), pay, tip, style: job.style, carry: +(simT - job.t0).toFixed(1), total: +(simT - job.tNew).toFixed(1) });
     popup(P.x, P.y, `Delivered! +${pay} (tip ${tip}${job.style ? ', style ' + job.style : ''})`, '#9dffb5');
@@ -399,6 +400,7 @@ function jump() {
   P.on = null; P.charge = 0; P.charging = false; P.fullHold = 0;
   P.pass = null; P.skipBody = b; P.chain = 0;
   if (s > 300) burst(P.x, P.y, '#cfe3ff', 8, 80);
+  sfx.jump(P.charge || (s - T.jumpMin) / (T.jumpMax - T.jumpMin));
 }
 
 // ---------------- anchor ----------------
@@ -496,6 +498,7 @@ function kick(pow = 1) {
   if (perfect) pow *= T.perfectBoost;
   P.vx += dx * T.kick * pow; P.vy += dy * T.kick * pow;
   P.kicks--; P.kickT = 0;
+  if (perfect) sfx.perfect(); else sfx.kick(Math.min(1, pow));
   if (perfect) {
     addStyle(20, `PERFECT KICK at ${bname(bt.b)}`, '#ffe08a'); toast(`✦ PERFECT KICK ✦  ${bname(bt.b)} · ×${T.perfectBoost} power`, 'gain');
     burst(P.x, P.y, '#ffe08a', 34, 260); cam.shake = Math.max(cam.shake, 6); logEv('perfect_kick', { body: bname(bt.b), pow: +pow.toFixed(2) });
@@ -633,7 +636,7 @@ function step(dt) {
       P.vx += nx * spit; P.vy += ny * spit;   // spat out a little harder than you hit
       P.x = b.x + nx * (b.r + T.playerR); P.y = b.y + ny * (b.r + T.playerR);
       if (b === hub) { P.kicks = T.kickMax; P.kickT = 0; }   // a solar bounce refreshes your kicks
-      burst(P.x, P.y, b === hub ? '#ffcf6b' : b.color, 24, 260); popup(P.x, P.y, b === hub ? 'solar bounce!' : 'cloud-top bounce!', b === hub ? '#ffcf6b' : '#ffd9a0');
+      burst(P.x, P.y, b === hub ? '#ffcf6b' : b.color, 24, 260); sfx.bounce(); popup(P.x, P.y, b === hub ? 'solar bounce!' : 'cloud-top bounce!', b === hub ? '#ffcf6b' : '#ffd9a0');
       if (simT - (P.lastBounce || -9) > 0.5) logEv(b === hub ? 'sun_bounce' : 'gas_bounce', { body: bname(b), speed: Math.hypot(P.vx, P.vy) | 0 });
       P.lastBounce = simT;
       continue;
@@ -683,6 +686,7 @@ function trackFlyby() {
   if (Math.abs(dv) >= T.slingMin) {
     if (dv > 0) P.chain++; else P.chain = 0;
     if (dv > 0 && job && job.state === 'carry') job.slings = (job.slings || 0) + 1;
+    sfx.sling(dv);
     toast(dv > 0 ? `Slingshot! ${bname(b)} +${dv | 0}${P.chain > 1 ? '  ×' + P.chain : ''}` : `Braked by ${bname(b)} ${dv | 0}`, dv > 0 ? 'gain' : 'lose');
     const mult = 1 + 0.5 * Math.max(0, P.chain - 1);
     const pts = Math.round(Math.abs(dv) / 4 * mult);
@@ -905,6 +909,7 @@ const keys = { left: false, right: false, up: false, down: false, w: false, a: f
 let minimapOn = true;
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'a', ArrowRight: 'right', KeyD: 'd', ArrowUp: 'up', KeyW: 'w', ArrowDown: 'down', KeyS: 's', ShiftLeft: 'heavy', ShiftRight: 'heavy', KeyF: 'ff' };
 addEventListener('keydown', e => {
+  audioInit();   // browsers only allow audio after a user gesture
   if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = true;
   if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Tab', 'Backspace'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
@@ -925,7 +930,7 @@ addEventListener('keydown', e => {
   if ((e.code === 'Escape' || e.code === 'Backspace') && !panelOpen() && (P.charging || P.kickCharging)) {
     const what = P.charging ? 'jump' : 'kick', pow = P.charging ? P.charge : P.kickCharge;
     P.charging = false; P.charge = 0; P.fullHold = 0; P.kickCharging = false;
-    popup(P.x, P.y, what + ' cancelled', '#cfe3ff'); logEv('cancel', { what, pow: +pow.toFixed(2) });
+    popup(P.x, P.y, what + ' cancelled', '#cfe3ff'); sfx.cancel(); logEv('cancel', { what, pow: +pow.toFixed(2) });
     e.preventDefault(); return;
   }
   if (guideIdx !== null && panelOpen()) {
@@ -949,6 +954,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyX') respawn('respawned');
   if (e.code === 'KeyH') keysFull = !keysFull;
   if (e.code === 'KeyT' && !panelOpen()) { const names = Object.keys(THEMES); setTheme(names[(names.indexOf(themeName) + 1) % names.length]); toast('Theme: ' + TH.name); logEv('theme', { name: themeName }); }
+  if (e.code === 'KeyN' && !panelOpen()) { setSound(!SND.on); toast(SND.on ? '♪ Sound on' : 'Sound muted'); logEv('sound', { on: SND.on }); }
   if (e.code === 'KeyV' && !panelOpen()) { cam.frame = !cam.frame; toast(cam.frame ? 'Camera frames you + target' : 'Camera follows you'); }
 });
 addEventListener('keyup', e => {
@@ -960,6 +966,7 @@ addEventListener('keyup', e => {
 });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('mousedown', e => {
+  audioInit();
   const [x, y] = s2w(e.clientX, e.clientY);
   if (e.button === 2) {
     let best = null, bd = Infinity;
@@ -978,6 +985,72 @@ addEventListener('mouseup', e => {
   planting = null;
 });
 cv.addEventListener('wheel', e => { e.preventDefault(); cam.bias = clamp(cam.bias * Math.exp(-e.deltaY * 0.001), 0.12, 2.5); LOG.meta.lastZoomBias = +cam.bias.toFixed(2); }, { passive: false });
+
+// ---------------- sound (WebAudio synth — no audio files) ----------------
+const SND = { ctx: null, on: true };
+try { SND.on = localStorage.getItem('oc-sound') !== 'off'; } catch (e) {}
+function audioInit() {
+  if (SND.ctx) { if (SND.ctx.state === 'suspended') SND.ctx.resume(); return; }
+  const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!AC) return;
+  const c = new AC(); SND.ctx = c;
+  SND.master = c.createGain(); SND.master.gain.value = SND.on ? 0.55 : 0; SND.master.connect(c.destination);
+  const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  SND.noise = nb;
+  const src = c.createBufferSource(); src.buffer = nb; src.loop = true;   // warp wind
+  SND.windF = c.createBiquadFilter(); SND.windF.type = 'bandpass'; SND.windF.Q.value = 0.9; SND.windF.frequency.value = 400;
+  SND.windG = c.createGain(); SND.windG.gain.value = 0;
+  src.connect(SND.windF).connect(SND.windG).connect(SND.master); src.start();
+  SND.hum = c.createOscillator(); SND.hum.type = 'sine'; SND.hum2 = c.createOscillator(); SND.hum2.type = 'triangle';   // planet hum
+  SND.humG = c.createGain(); SND.humG.gain.value = 0;
+  SND.hum.connect(SND.humG); SND.hum2.connect(SND.humG); SND.humG.connect(SND.master); SND.hum.start(); SND.hum2.start();
+}
+function tone(freq, dur, type = 'sine', vol = 0.3, glide = 1, delay = 0) {
+  const c = SND.ctx; if (!c || !SND.on) return;
+  const t0 = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0); if (glide !== 1) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * glide), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(SND.master); o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function noiseHit(dur, freq, vol = 0.3, q = 1, delay = 0) {
+  const c = SND.ctx; if (!c || !SND.on) return;
+  const t0 = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = SND.noise; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  s.connect(f).connect(g).connect(SND.master); s.start(t0, Math.random()); s.stop(t0 + dur + 0.05);
+}
+const sfx = {
+  jump: p => { tone(200 + 220 * p, 0.28, 'triangle', 0.16, 2.2); noiseHit(0.18, 900, 0.07); },
+  kick: p => { tone(120, 0.25, 'sine', 0.22 + 0.25 * p, 0.4); noiseHit(0.2 + 0.25 * p, 500 + 900 * p, 0.1 + 0.14 * p, 0.7); },
+  perfect: () => { [880, 1320, 1760, 2640].forEach((f, i) => tone(f, 0.6, 'sine', 0.13, 1, i * 0.05)); noiseHit(0.5, 3000, 0.08, 2); },
+  window: () => { tone(660, 0.5, 'sine', 0.07, 1.5); },
+  land: v => { tone(85, 0.2, 'sine', Math.min(0.35, 0.06 + v / 900), 0.6); noiseHit(0.14, 280, Math.min(0.22, v / 1400)); },
+  deliver: n => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.4, 'triangle', 0.12, 1, i * 0.08)); for (let i = 0; i < n; i++) tone(1568 + i * 392, 0.3, 'sine', 0.09, 1, 0.42 + i * 0.13); },
+  sling: dv => { tone(dv > 0 ? 300 : 700, 0.7, 'sawtooth', 0.045, dv > 0 ? 2.6 : 0.4); noiseHit(0.6, dv > 0 ? 1800 : 600, 0.06, 0.6); },
+  bounce: () => { tone(150, 0.45, 'sine', 0.24, 3); },
+  brake: () => { tone(500, 0.5, 'sawtooth', 0.035, 0.45); },
+  cancel: () => tone(320, 0.14, 'triangle', 0.08, 0.5),
+  mote: () => tone(1400 + Math.random() * 700, 0.14, 'sine', 0.05),
+  combo: n => tone(600 + 90 * Math.min(n, 12), 0.18, 'square', 0.04),
+  ui: () => tone(760, 0.05, 'square', 0.035),
+};
+function setSound(on) {
+  SND.on = on; try { localStorage.setItem('oc-sound', on ? 'on' : 'off'); } catch (e) {}
+  if (SND.master) SND.master.gain.setTargetAtTime(on ? 0.55 : 0, SND.ctx.currentTime, 0.05);
+}
+function updateAudio() {
+  const c = SND.ctx; if (!c) return; const t = c.currentTime, sp = Math.hypot(P.vx, P.vy);
+  SND.windG.gain.setTargetAtTime(paused ? 0 : clamp((warp - 1) / 7, 0, 1) * 0.32 + cam.rip * 0.08, t, 0.15);
+  SND.windF.frequency.setTargetAtTime(250 + sp * 0.7 * Math.sqrt(warp), t, 0.2);
+  let best = null, bd = Infinity;
+  for (const b of bodies) { if (b.ghost || b.seed || b === hub) continue; const d = Math.hypot(P.x - b.x, P.y - b.y) - b.r; if (d < bd) { bd = d; best = b; } }
+  if (best && !P.on && !paused && bd < passR(best)) {   // hum with doppler: approaching = higher pitch
+    const rx = P.x - best.x, ry = P.y - best.y, d = Math.hypot(rx, ry) || 1, vr = ((P.vx - best.vx) * rx + (P.vy - best.vy) * ry) / d;
+    const f = (best.gas ? 55 : 85) * (1 - clamp(vr / 700, -0.6, 0.6));
+    SND.hum.frequency.setTargetAtTime(f, t, 0.04); SND.hum2.frequency.setTargetAtTime(f * 1.5, t, 0.04);
+    SND.humG.gain.setTargetAtTime(0.2 * (1 - bd / passR(best)), t, 0.08);
+  } else SND.humG.gain.setTargetAtTime(0, t, 0.25);
+}
 
 // ---------------- themes ----------------
 const THEMES = {
@@ -1683,7 +1756,7 @@ function keysHTML() {
   h += P.on ? k('<kbd>A</kbd><kbd>D</kbd>', 'walk') + k('<kbd>Space</kbd> hold', 'charge + preview') + k('release', 'jump')
     : k('<kbd>Space</kbd> hold', 'kick (longer = stronger)') + k('+<kbd>W</kbd> / <kbd>S</kbd>', 'prograde / retro') + k('+<kbd>A</kbd> / <kbd>D</kbd>', 'radial in / out') +
       k('+arrows', 'screen aim') + k('<kbd>Shift</kbd> hold', `${gear} (${fmt(T.anchorRange)})`) + k('<kbd>Q</kbd>', 'switch catch target') + k('<kbd>F</kbd> hold', 'warp ×8 (auto-brakes)');
-  h += '<div class="sep"></div>' + k('<kbd>B</kbd>', 'Flight School') + k('<kbd>Z</kbd> · <kbd>M</kbd>', 'overview · map') + k('<kbd>T</kbd>', 'theme: ' + TH.name);
+  h += '<div class="sep"></div>' + k('<kbd>B</kbd>', 'Flight School') + k('<kbd>Z</kbd> · <kbd>M</kbd>', 'overview · map') + k('<kbd>T</kbd>', 'theme: ' + TH.name) + k('<kbd>N</kbd>', SND.on ? 'sound on' : 'sound muted');
   if (keysFull) h += k('<kbd>P</kbd>', 'forecast') + k('<kbd>V</kbd>', 'frame target') + k('<kbd>C</kbd>', 'camera spin') + k('<kbd>G</kbd>', 'assist (L2)') +
     k('click+hold', 'plant seed') + k('right-click', 'dig seed') + k('<kbd>X</kbd>', 'respawn') + k('wheel', 'zoom') + k('<kbd>L</kbd>', 'download log');
   h += k('<kbd>H</kbd>', keysFull ? 'fewer keys' : 'all keys');
@@ -1753,13 +1826,13 @@ function frame(now) {
   }
   const nev = paused ? null : nextEvent();
   BT = bulletTime();
-  if (BT && !paused) P.pass.bt = (P.pass.bt || 0) + dt;
+  if (BT && !paused) { P.pass.bt = (P.pass.bt || 0) + dt; if (BT.perfect && !P.pass.chimed) { P.pass.chimed = true; sfx.window(); } }
   btAmt += ((BT ? 1 : 0) - btAmt) * (1 - Math.exp(-dt * (BT ? 6 : 4)));
   const cap = P.charging || P.kickCharging || P.reach || BT ? 1 : clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax);
   const want = keys.ff && !paused ? cap : 1;
   warp += (want - warp) * (1 - Math.exp(-dt * (want > warp ? 1.5 : 7)));   // ramp up gently, brake hard
   if (warp < 1.01 && want === 1) warp = 1;
-  if (keys.ff && nev && warp > 2 && cap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); logEv('warp_slow', { label: nev.label }); }
+  if (keys.ff && nev && warp > 2 && cap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); sfx.brake(); logEv('warp_slow', { label: nev.label }); }
   if (cap > 4) braked = false;
   frameDt = dt;
   if (paused) acc = 0; else acc += dt * warp * lerp(1, T.btScale, btAmt);   // bullet-time slows the sim
@@ -1775,6 +1848,7 @@ function frame(now) {
   for (const p of popups) p.t += dt;
   for (let i = popups.length - 1; i >= 0; i--) if (popups[i].t > 2.2) popups.splice(i, 1);
   cam.shake *= Math.exp(-dt * 9); if (cam.shake < 0.05) cam.shake = 0;
+  updateAudio();
   updateCamera(dt);
   updateForecast();
   draw();
