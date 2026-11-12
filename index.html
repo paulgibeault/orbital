@@ -172,7 +172,8 @@ function buildL1() {
   outpost = body({ name: 'Outpost', r: 40, parent: hub, R: 2250, phase: 5.4, color: '#e3d26b' });
   rocks = [[1820, 0.4, 11], [1850, 1.6, 9], [1880, 2.9, 13], [1915, 3.8, 10], [1950, 5.0, 12]]
     .map(([R, phase, r]) => body({ r, dens: 14, parent: hub, R, phase, color: '#9a8f86' }));
-  bodies = [hub, kettle, pip, brindle, bellows, twins, ada, bo, outpost, ...rocks];   // parents before children
+  const wanderer = body({ name: 'Wanderer', comet: true, r: 15, dens: 40, color: '#bfe9ff', ell: { peri: 420, apo: 2300, w0: 2.2, M0: 1.0 } });
+  bodies = [hub, wanderer, kettle, pip, brindle, bellows, twins, ada, bo, outpost, ...rocks];   // parents before children
 }
 
 // Level 2 "Outer Run": a wide system where your own push is small next to orbital speeds,
@@ -185,7 +186,8 @@ function buildL2() {
   wisp    = body({ name: 'Wisp',    r: 18, dens: T.worldDens, parent: anvil, R: 270, phase: 0.5, color: '#c9c4b8' });
   lantern = body({ name: 'Lantern', r: 40, dens: T.worldDens, parent: hub, R: 3200, phase: 3.6, color: '#e3d26b' });
   tern    = body({ name: 'Tern',    r: 34, dens: T.worldDens, parent: hub, R: 4000, phase: 5.0, color: '#d98bd0' });
-  bodies  = [hub, dock, ferry, anvil, wisp, lantern, tern];
+  const skipjack = body({ name: 'Skipjack', comet: true, r: 16, dens: 40, color: '#bfe9ff', ell: { peri: 820, apo: 4300, w0: 4.0, M0: 2.5 } });
+  bodies  = [hub, skipjack, dock, ferry, anvil, wisp, lantern, tern];
 }
 
 const BASE_T = Object.assign({}, T);
@@ -215,6 +217,7 @@ let assist = false;
 
 function finishBodies() {
   for (const b of bodies) b.M = b.ghost ? 0 : b.dens * b.r ** 3;
+  for (const b of bodies) if (b.ell) { const k = b.ell; k.a = (k.peri + k.apo) / 2; k.e = (k.apo - k.peri) / (k.apo + k.peri); k.n = Math.sqrt(T.G * hub.M / k.a ** 3); }
   for (const b of bodies) {
     if (!b.parent) continue;
     if (b.parent.ghost) b.w = Math.sqrt(T.G * b.M / (4 * b.R ** 3));          // equal-mass binary
@@ -245,8 +248,22 @@ function applyTuning(n) {
   if (assist && LEVELS[n].assistT) Object.assign(T, LEVELS[n].assistT);
 }
 
+// comets ride Kepler ellipses around the star (solve M = E − e·sinE)
+function cometState(b, t, out, cache) {
+  const k = b.ell, M = k.M0 + k.n * t;
+  let E = cache && cache.E !== undefined ? cache.E + (M - cache.M) / (1 - k.e * Math.cos(cache.E)) : M;   // warm start
+  for (let i = 0; i < 8; i++) { const d = (E - k.e * Math.sin(E) - M) / (1 - k.e * Math.cos(E)); E -= d; if (Math.abs(d) < 1e-10) break; }
+  if (cache) { cache.E = E; cache.M = M; }
+  const cE = Math.cos(E), sE = Math.sin(E), sq = Math.sqrt(1 - k.e * k.e), Ed = k.n / (1 - k.e * cE);
+  const xp = k.a * (cE - k.e), yp = k.a * sq * sE, vxp = -k.a * sE * Ed, vyp = k.a * sq * cE * Ed;
+  const c = Math.cos(k.w0), s = Math.sin(k.w0);
+  out[0] = hub.x + xp * c - yp * s; out[1] = hub.y + xp * s + yp * c; out[2] = vxp * c - vyp * s; out[3] = vxp * s + vyp * c;
+  return out;
+}
+const _cs = [0, 0, 0, 0];
 function placeBodies(t) {
   for (const b of bodies) {
+    if (b.ell) { cometState(b, t, _cs); b.x = _cs[0]; b.y = _cs[1]; b.vx = _cs[2]; b.vy = _cs[3]; continue; }
     if (!b.parent) continue;
     const p = b.parent, th = b.phase + b.w * t, c = Math.cos(th), s = Math.sin(th);
     b.x = p.x + b.R * c; b.y = p.y + b.R * s;
@@ -300,7 +317,7 @@ function newJob() {
     if (hint) setTimeout(() => popup(P.x, P.y - 40, hint, '#9ad8ff'), 900);
     return;
   }
-  const pool = bodies.filter(b => b.name && !b.seed && b !== hub && !b.gas);
+  const pool = bodies.filter(b => b.name && !b.seed && b !== hub && !b.gas && !b.comet);
   let from, to;
   do { from = pool[(Math.random() * pool.length) | 0]; to = pool[(Math.random() * pool.length) | 0]; } while (from === to);
   const rf = from.parent === hub ? from.R : from.parent ? from.parent.R : 0;
@@ -325,7 +342,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 14,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 15,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -366,6 +383,7 @@ function land(b) {
   LOG.landT = simT;
   P.pass = null; P.chain = 0; P.kickCharging = false;
   if (COMBO.hits) comboEnd('landed');
+  if (b.comet) { addStyle(15, 'COMET RIDE ☄ ' + b.name, '#bfe9ff'); toast(`☄ Riding ${b.name} — jump off at its closest pass for a huge boost`, 'gain'); logEv('comet_ride', { comet: b.name }); }
   P.on = b; P.ang = a; P.lastBody = b; P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.kicks = T.kickMax; P.kickT = 0;
   P.walkV = clamp((rx * -Math.sin(a) + ry * Math.cos(a)) * 0.4, -T.walk, T.walk);
   P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
@@ -717,7 +735,7 @@ function phaseInfo(tgt, osc) {
   if (!tgt || P.on || !osc || !isFinite(osc.Ap) || refBody() !== hub) return null;
   const tb = tgt.parent === hub ? tgt : (tgt.parent && tgt.parent.parent === hub ? tgt.parent : null);   // moons & binaries: chase the parent
   if (!tb) return null;
-  const R = tb.R; if (R < osc.Pe - 80 || R > osc.Ap + 80) return null;   // only when you share its orbit
+  const R = tb.R; if (osc.Pe < R * 0.72 || osc.Ap > R * 1.3) return null;   // only when you're on (nearly) its orbit, not just crossing it
   const dir = Math.sign(osc.h) || 1; if (dir !== Math.sign(tb.w)) return null;
   const th = angDiff(Math.atan2(tb.y - hub.y, tb.x - hub.x), Math.atan2(P.y - hub.y, P.x - hub.x)) * dir;   // + = target ahead
   const Tt = TAU / Math.abs(tb.w), Ty = Tt * Math.pow(((osc.Ap + osc.Pe) / 2) / R, 1.5);
@@ -739,7 +757,7 @@ function forecast(x, y, vx, vy, horizon, useAnchor, skip) {
   let skipI = skipI0, t = 0, steps = 0, nextPt = 0.1, pass = null, end = null;
   const tb0 = currentTarget(), tb = tb0 && tb0 !== skip ? tb0 : null, tI = tb ? bodies.indexOf(tb) : -1;
   let ca = null;   // closest approach to the target
-  const motes = [], mseen = new Set();
+  const motes = [], mseen = new Set(), ecache = [];
   let exit = skip ? null : { x, y, vx, vy, t: 0 };   // state once you've climbed out of the launch world's pull
   const pts = [[x, y, 0]], enc = [];
   const energy = () => (vx * vx + vy * vy) / 2 + phiSun(Math.hypot(x - hub.x, y - hub.y));
@@ -751,6 +769,11 @@ function forecast(x, y, vx, vy, horizon, useAnchor, skip) {
     const tt = simT + t + dt;
     for (let i = 0; i < n; i++) {
       const b = bodies[i], st = FC_S[i] || (FC_S[i] = [0, 0, 0, 0]);
+      if (b.ell) {   // exact Kepler every 8th step, straight-line in between (<0.1 px error) — keeps the forecast cheap
+        if (steps % 8 === 1 || !ecache[i]) cometState(b, tt, st, ecache[i] || (ecache[i] = {}));
+        else { st[0] += st[2] * dt; st[1] += st[3] * dt; }
+        continue;
+      }
       if (pidx[i] < 0) { st[0] = b.x; st[1] = b.y; st[2] = b.vx; st[3] = b.vy; continue; }
       const pp = FC_S[pidx[i]], th = b.phase + b.w * tt, c = Math.cos(th), sn = Math.sin(th);
       st[0] = pp[0] + b.R * c; st[1] = pp[1] + b.R * sn; st[2] = pp[2] - b.R * b.w * sn; st[3] = pp[3] + b.R * b.w * c;
@@ -1129,7 +1152,7 @@ function vnoise(x, y, sd) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 function fbm(x, y, sd, oct = 4) { let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < oct; i++) { s += a * vnoise(x * f, y * f, sd + i * 17); n += a; a *= 0.5; f *= 2.03; } return s / n; }
-const TEXKIND = { Hearth: 'sun', Cinder: 'sun', Kettle: 'terra', Dock: 'terra', Pip: 'moon', Wisp: 'moon', Brindle: 'jungle', Ferry: 'jungle',
+const TEXKIND = { Wanderer: 'ice', Skipjack: 'ice', Hearth: 'sun', Cinder: 'sun', Kettle: 'terra', Dock: 'terra', Pip: 'moon', Wisp: 'moon', Brindle: 'jungle', Ferry: 'jungle',
   Bellows: 'gas', Anvil: 'gas', Ada: 'ice', Bo: 'ice', Tern: 'ice', Outpost: 'desert', Lantern: 'desert' };
 function makeTexture(b) {
   const kind = b.seed ? 'moss' : TEXKIND[b.name] || 'moon', N = kind === 'sun' ? 160 : 128;
@@ -1321,6 +1344,22 @@ function draw() {
     }
   }
 
+  // comet paths (faint ellipse) + tails pointing away from the star
+  for (const b of bodies) {
+    if (!b.ell) continue;
+    const k = b.ell, bb = k.a * Math.sqrt(1 - k.e * k.e), cx = hub.x - Math.cos(k.w0) * k.a * k.e, cy = hub.y - Math.sin(k.w0) * k.a * k.e;
+    ctx.strokeStyle = 'rgba(191,233,255,0.10)'; ctx.lineWidth = px; ctx.setLineDash([2 * px, 10 * px]);
+    ctx.beginPath(); ctx.ellipse(cx, cy, k.a, bb, k.w0, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    const dx = b.x - hub.x, dy = b.y - hub.y, r = Math.hypot(dx, dy) || 1, ux = dx / r, uy = dy / r;
+    const L = clamp(260000 / r, 40, 520), vs = Math.hypot(b.vx, b.vy) || 1;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const [len, wdt, bend, col] of [[L, b.r * 1.1, 0, '170,225,255'], [L * 0.7, b.r * 1.6, 0.45, '255,230,190']]) {
+      const tx = ux - bend * b.vx / vs, ty = uy - bend * b.vy / vs, tn = Math.hypot(tx, ty), ex = b.x + tx / tn * len, ey = b.y + ty / tn * len;
+      const g = ctx.createLinearGradient(b.x, b.y, ex, ey); g.addColorStop(0, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(b.x - uy * wdt, b.y + ux * wdt); ctx.lineTo(ex, ey); ctx.lineTo(b.x + uy * wdt, b.y - ux * wdt); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
   // bodies
   for (const b of bodies) {
     if (b.ghost) continue;
@@ -1769,6 +1808,7 @@ const GUIDE = [
       <li><b>Inward</b>: launch <i>against</i> your world's motion, or <kbd>S</kbd> at Ap, or pass <i>in front</i> of a world.</li>
       <li><b>Missed?</b> Don't spam kicks. Look at the ellipse: is your Ap/Pe reaching the gold orbit? Fix the <i>size</i> first (W/S), then the <i>timing</i>.</li>
       <li><b>Combos:</b> grazes, slingshots, perfect kicks, stardust and full orbits chain within 10 s — style points multiply up to ×4. Landing ends the combo.</li>
+      <li><b>☄ Comets</b> dive fast past the star on long ellipses. Their passes give big, fleeting slingshots — and you can ride one.</li>
       <li><b>✧ Stardust streams</b> ride natural circular orbits. Match a stream's orbit to sweep it up (+2 each, +25 for the whole stream).</li>
       <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). It brakes by itself before slingshots, arrivals and landings — just keep holding.</li>
       <li>★ ratings: delivered · under par time · used a slingshot (or ≤1 kick).</li></ul>
@@ -1969,6 +2009,11 @@ function frame(now) {
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
   for (const p of popups) p.t += dt;
   for (let i = popups.length - 1; i >= 0; i--) if (popups[i].t > 2.2) popups.splice(i, 1);
+  for (const b of bodies) if (b.ell && !paused) {   // announce a comet's swing past the star
+    const r = Math.hypot(b.x - hub.x, b.y - hub.y);
+    if (r < b.ell.peri * 1.35 && !b.announced) { b.announced = true; toast(`☄ ${b.name} is swinging past ${hub.name} — big slingshots for a moment`, 'gain'); }
+    if (r > b.ell.peri * 2) b.announced = false;
+  }
   cam.shake *= Math.exp(-dt * 9); if (cam.shake < 0.05) cam.shake = 0;
   updateAudio();
   updateCamera(dt);
