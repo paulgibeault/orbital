@@ -185,11 +185,11 @@ function buildL2() {
 
 const BASE_T = Object.assign({}, T);
 const LEVELS = {
-  1: { name: 'Courier', build: buildL1, start: () => kettle, dust: [1760, 2040, 420],
+  1: { name: 'Courier', build: buildL1, start: () => kettle, dust: [1760, 2040, 420], streams: [[700, 1.0], [1340, 3.6], [2120, 5.6]],
        T: {},   // the base tuning above
        script: () => [[kettle, pip], [pip, brindle], [brindle, kettle], [kettle, ada], [bo, outpost]],
        intro: 'Walk to the parcel, hop toward Pip — mid-air, Q to ring Pip, hold Shift to anchor' },
-  2: { name: 'Outer Run', build: buildL2, start: () => dock, dust: [2480, 2900, 650],
+  2: { name: 'Outer Run', build: buildL2, start: () => dock, dust: [2480, 2900, 650], streams: [[1320, 2.0], [1680, 4.4], [2700, 0.6], [3600, 3.0]],
        T: { sunDens: 60, worldDens: 7, haloR: 4600, wallR: 4700, lostDist: 14000, coronaR: 300, sunSpit: 120,
             jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90,
             anchorRange: 550, anchorAccel: 120, anchorDamp: 1.5 },   // anchor = landing gear: catches & settles you near a world, can't carry you between orbits
@@ -316,7 +316,7 @@ function addStyle(pts, text, color) {
 // otherwise kept in localStorage — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
-  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 12,
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 13,
           bodies: [] },
   events: [], samples: [],
   perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
@@ -649,6 +649,7 @@ function step(dt) {
   }
 
   trackFlyby();
+  collectStardust();
 
   // full orbit around whatever is pulling hardest
   const d = G0.dom, a = Math.atan2(P.y - d.y, P.x - d.x);
@@ -727,6 +728,7 @@ function forecast(x, y, vx, vy, horizon, useAnchor, skip) {
   let skipI = skipI0, t = 0, steps = 0, nextPt = 0.1, pass = null, end = null;
   const tb0 = currentTarget(), tb = tb0 && tb0 !== skip ? tb0 : null, tI = tb ? bodies.indexOf(tb) : -1;
   let ca = null;   // closest approach to the target
+  const motes = [], mseen = new Set();
   let exit = skip ? null : { x, y, vx, vy, t: 0 };   // state once you've climbed out of the launch world's pull
   const pts = [[x, y, 0]], enc = [];
   const energy = () => (vx * vx + vy * vy) / 2 + phiSun(Math.hypot(x - hub.x, y - hub.y));
@@ -788,12 +790,23 @@ function forecast(x, y, vx, vy, horizon, useAnchor, skip) {
       }
     }
     if (end) break;
+    if (STREAMS.length && t < 60) {   // stardust this path would sweep up
+      const r = Math.hypot(x - hub.x, y - hub.y);
+      for (let si = 0; si < STREAMS.length; si++) {
+        const st = STREAMS[si]; if (!st.left || Math.abs(r - st.R) > MOTE_R + 40) continue;
+        for (let i = 0; i < st.n; i++) {
+          if (st.got[i] || mseen.has(si * 64 + i)) continue;
+          const [mx, my] = motePos(st, i, tt);
+          if (Math.hypot(x - mx, y - my) < MOTE_R) { mseen.add(si * 64 + i); motes.push([si, i]); }
+        }
+      }
+    }
     if (t >= nextPt) { pts.push([x, y, t]); nextPt += 0.1; }
   }
   if (pass) enc.push({ type: 'pass', b: pass.b, dv: (energy() - pass.E0) / (Math.hypot(vx, vy) || 1), x: pass.at[0], y: pass.at[1], bx: pass.at[2], by: pass.at[3], t: pass.at[4], open: true });
   pts.push([x, y, t]);
   if (end && end.b === tb) ca = { d: 0, t: end.t, x: end.x, y: end.y, bx: end.x, by: end.y, b: tb };
-  return { pts, enc, end, H: horizon, ca, exit, steps };
+  return { pts, enc, end, H: horizon, ca, exit, steps, motes };
 }
 function updateForecast() {
   FC.frame++;
@@ -825,6 +838,8 @@ function updateForecast() {
   }
 }
 const systemR = () => { let m = 0; for (const b of bodies) if (!b.ghost) m = Math.max(m, Math.hypot(b.x - hub.x, b.y - hub.y) + b.r); return m; };
+
+function comboHit(kind, weight) {}   // filled in by the combo meter
 
 // ---------------- slingshot bullet-time ----------------
 // At the bottom of a fast pass (moving mostly sideways past a world, low and fast) time slows; that's the best moment to kick.
@@ -1144,6 +1159,67 @@ function buildDust() {
     DUST.push({ r, ph: rand(0, TAU), w: Math.sqrt(pull(hub, r) / r), s: rand(1.5, 4.5), a: rand(0.15, 0.5) });
   }
 }
+// stardust streams: collectible motes riding natural circular orbits (match the orbit to ride a stream)
+let STREAMS = [], stardust = 0;
+const MOTE_R = 75;   // magnet radius: motes within this fly into your ship
+function buildStreams() {
+  const n = 14, arc = 260;   // compact clusters: ~260 px of orbit, so one good line can sweep the whole thing
+  STREAMS = (LEVELS[level].streams || []).map(([R, ph]) =>
+    ({ R, ph, span: arc / R, n, w: Math.sqrt(pull(hub, R) / R), got: new Uint8Array(n), left: n, respawn: 0,
+       dr: Array.from({ length: n }, (_, i) => Math.sin(i * 2.399) * 35) }));   // motes spread ±35 px around the orbit
+}
+const moteAng = (st, i, t) => st.ph + st.w * t + (i / (st.n - 1) - 0.5) * st.span;
+const motePos = (st, i, t) => { const a = moteAng(st, i, t), r = st.R + st.dr[i]; return [hub.x + Math.cos(a) * r, hub.y + Math.sin(a) * r]; };
+const FLYING_MOTES = [];
+function collectStardust() {
+  const r = Math.hypot(P.x - hub.x, P.y - hub.y), a = Math.atan2(P.y - hub.y, P.x - hub.x);
+  for (const st of STREAMS) {
+    if (st.left === 0) {
+      if (simT > st.respawn) { st.got.fill(0); st.left = st.n; st.ph = rand(0, TAU) - st.w * simT; }
+      continue;
+    }
+    if (Math.abs(r - st.R) > MOTE_R + 40) continue;
+    for (let i = 0; i < st.n; i++) {
+      if (st.got[i]) continue;
+      const ma = moteAng(st, i, simT);
+      if (Math.abs(angDiff(a, ma)) * st.R > MOTE_R * 2) continue;
+      const [mx, my] = motePos(st, i, simT);
+      if (Math.hypot(P.x - mx, P.y - my) < MOTE_R) {
+        st.got[i] = 1; st.left--; stardust++; credits += 2;
+        FLYING_MOTES.push({ x: mx, y: my, t: 0 }); sfx.mote(); comboHit('stardust', 1);
+        if (LOG.flight) LOG.flight.motes = (LOG.flight.motes || 0) + 1;
+        if (st.left === 0) {
+          credits += 25; st.respawn = simT + 45;
+          toast('✧ Stardust stream complete +25', 'good'); popup(P.x, P.y, 'stream complete +25', '#bfe9ff'); comboHit('stream', 3);
+          logEv('stream_done', { R: st.R });
+        }
+      }
+    }
+  }
+}
+function drawStardust(px) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const st of STREAMS) {
+    if (st.left === 0) continue;
+    const a0 = moteAng(st, 0, simT), a1 = moteAng(st, st.n - 1, simT);
+    ctx.strokeStyle = 'rgba(160,220,255,0.08)'; ctx.lineWidth = 90; ctx.lineCap = 'round';   // faint ribbon
+    ctx.beginPath(); ctx.arc(hub.x, hub.y, st.R, a0, a1); ctx.stroke();
+    for (let i = 0; i < st.n; i++) {
+      if (st.got[i]) continue;
+      const [mx, my] = motePos(st, i, simT);
+      const tw = 0.6 + 0.4 * Math.sin(simT * 5 + i * 1.7), rr = Math.max(4, 3 * px) * (0.8 + 0.4 * tw);
+      const g = ctx.createRadialGradient(mx, my, 0, mx, my, rr * 3);
+      g.addColorStop(0, `rgba(230,248,255,${0.9 * tw})`); g.addColorStop(0.35, 'rgba(140,210,255,0.35)'); g.addColorStop(1, 'rgba(140,210,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mx, my, rr * 3, 0, TAU); ctx.fill();
+    }
+  }
+  for (let k = FLYING_MOTES.length - 1; k >= 0; k--) {   // magnet: collected motes streak into the ship
+    const f = FLYING_MOTES[k]; f.t += frameDt * 4; if (f.t >= 1) { FLYING_MOTES.splice(k, 1); continue; }
+    const x = lerp(f.x, P.x, f.t * f.t), y = lerp(f.y, P.y, f.t * f.t);
+    ctx.fillStyle = `rgba(220,245,255,${1 - f.t})`; ctx.beginPath(); ctx.arc(x, y, Math.max(3, 2.5 * px), 0, TAU); ctx.fill();
+  }
+  ctx.restore(); ctx.lineCap = 'butt';
+}
 const GALAXIES = Array.from({ length: 4 }, () => ({ x: rand(0, 4000), y: rand(0, 4000), r: rand(30, 70), ang: rand(0, TAU), tilt: rand(0.25, 0.6), d: 0.015 }));
 
 // ---------------- rendering ----------------
@@ -1201,6 +1277,7 @@ function draw() {
     const a = d.ph + d.w * simT, sz = Math.max(d.s, 1.4 * px);
     ctx.fillStyle = `rgba(${TH.dust},${d.a})`; ctx.fillRect(hub.x + Math.cos(a) * d.r, hub.y + Math.sin(a) * d.r, sz, sz);
   }
+  drawStardust(px);
   // orbit rails (target's highlighted) + a motion streak behind each world so you can see which side is "behind"
   const tgt = job && job.state !== 'done' ? (job.state === 'wait' ? job.from : job.to) : null;
   for (const b of bodies) {
@@ -1324,6 +1401,14 @@ function draw() {
   }
   drawFC(FC.kick, true);
   drawFC(FC.main, false);
+  const fcm = (P.kickCharging && FC.kick) ? FC.kick : FC.main;   // stardust your (kick-)forecast sweeps
+  if (forecastOn && fcm && fcm.motes && fcm.motes.length) {
+    ctx.strokeStyle = 'rgba(200,240,255,0.8)'; ctx.lineWidth = 1.5 * px;
+    let sx = 0, sy = 0;
+    for (const [si, i] of fcm.motes) { const st = STREAMS[si]; if (!st || st.got[i]) continue; const [mx, my] = motePos(st, i, simT);
+      ctx.beginPath(); ctx.arc(mx, my, 9 * px, 0, TAU); ctx.stroke(); sx += mx; sy += my; }
+    const n = fcm.motes.length; fcLabels.push([sx / n, sy / n - 20 * px, `✧ ×${n}`, '#bfe9ff']);
+  }
   // "if you kick now" closest approach (shown while charging a kick)
   if (forecastOn && FC.kick && FC.kick.ca && FC.kick.ca.d > 0 && P.kickCharging) {
     const c = FC.kick.ca, ok = c.d <= T.anchorRange, col = ok ? TH.good : TH.accent2;
@@ -1535,6 +1620,8 @@ function drawMinimap(tgt) {
     ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(x, y, Math.max(b === hub ? 4 : 1.8, b.r * k), 0, TAU); ctx.fill();
     if (b === tgt) { ctx.strokeStyle = '#ffd28a'; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.stroke(); }
   }
+  ctx.fillStyle = 'rgba(190,233,255,0.9)';
+  for (const st of STREAMS) if (st.left) { const [x, y] = m(hub.x + Math.cos(moteAng(st, st.n >> 1, simT)) * st.R, hub.y + Math.sin(moteAng(st, st.n >> 1, simT)) * st.R); ctx.fillRect(x - 1.5, y - 1.5, 3, 3); }
   const [px0, py0] = m(P.x, P.y);
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px0, py0, 3, 0, TAU); ctx.fill();
   ctx.restore();
@@ -1653,6 +1740,7 @@ const GUIDE = [
       <li><b>Outward from a moon</b>: jump with the moon's motion.</li>
       <li><b>Inward</b>: launch <i>against</i> your world's motion, or <kbd>S</kbd> at Ap, or pass <i>in front</i> of a world.</li>
       <li><b>Missed?</b> Don't spam kicks. Look at the ellipse: is your Ap/Pe reaching the gold orbit? Fix the <i>size</i> first (W/S), then the <i>timing</i>.</li>
+      <li><b>✧ Stardust streams</b> ride natural circular orbits. Match a stream's orbit to sweep it up (+2 each, +25 for the whole stream).</li>
       <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). It brakes by itself before slingshots, arrivals and landings — just keep holding.</li>
       <li>★ ratings: delivered · under par time · used a slingshot (or ≤1 kick).</li></ul>
       <span class="sub">Open this any time with <kbd>B</kbd>.</span>` },
@@ -1722,7 +1810,7 @@ function missionHTML() {
     <div class="pips">${Array.from({ length: T.levelGoal }, (_, i) => `<span class="${i < lvlCount ? 'on' : ''}"></span>`).join('')}</div>
     <div class="row"><span>Job ${Math.min(lvlCount + 1, T.levelGoal)} of ${T.levelGoal}${job && job.state === 'carry' ? ` · ${fmt(simT - job.t0)}s (par ${T.par})` : ''}</span><span>tip <b>${fmt(tipLeft)}s</b></span></div>
     <div class="bar"><i style="width:${(100 * tipLeft / T.tipWindow).toFixed(0)}%"></i></div>
-    <div class="row" style="margin-top:8px"><span>Credits <b>${credits.toLocaleString()}</b></span><span>Seeds <b>${seeds}</b></span></div>`;
+    <div class="row" style="margin-top:8px"><span>Credits <b>${credits.toLocaleString()}</b></span><span>✧ <b>${stardust}</b> · Seeds <b>${seeds}</b></span></div>`;
 }
 function instrHTML() {
   const tgt = currentTarget(), osc = FC.osc || (P.on ? null : oscOrbit()), ca = FC.main && FC.main.ca;
@@ -1789,7 +1877,7 @@ function hidePanel() { panelEl.style.display = 'none'; panelAction = null; pause
 function startLevel(n) {
   level = n; applyTuning(n); LEVELS[n].build(); finishBodies(); placeBodies(simT);
   lvlCount = 0; levelDone = false; levelT0 = simT; job = null; jobTimer = 0; levelStars = 0;
-  buildDust();
+  buildDust(); buildStreams();
   P.lastBody = LEVELS[n].start(); respawn(); P.ang = -Math.PI / 2; P.trail.length = 0;
   step(0); P.Eprev = helioE();
   newJob();
