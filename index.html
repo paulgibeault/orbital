@@ -1,0 +1,1744 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Orbital Courier — prototype</title>
+<style>
+  :root{
+    --bg:#04050b; --panel:rgba(12,16,34,.64); --brd:rgba(150,175,255,.16); --ink:#e3ebff; --dim:#8c9cc6; --faint:rgba(220,230,255,.08);
+    --accent:#ffd28a; --accent2:#7fc8ff; --good:#9dffb5; --warn:#ffb36b; --bad:#ff9c9c; --glow:rgba(127,200,255,.25);
+    --font:"Avenir Next","SF Pro Display",-apple-system,"Segoe UI",Roboto,sans-serif; --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  body[data-theme=blueprint]{ --bg:#071a36; --panel:rgba(6,28,62,.72); --brd:rgba(140,205,255,.38); --ink:#eef7ff; --dim:#94bde6;
+    --accent:#ffffff; --accent2:#7fe6ff; --glow:rgba(127,230,255,.25); --faint:rgba(140,205,255,.1); }
+  body[data-theme=amber]{ --bg:#0c0703; --panel:rgba(32,19,6,.74); --brd:rgba(255,176,70,.3); --ink:#ffe2b0; --dim:#c3925a;
+    --accent:#ffb347; --accent2:#ffd27a; --good:#d6ff9a; --warn:#ff9a4a; --glow:rgba(255,176,70,.22); --faint:rgba(255,176,70,.08);
+    --font:"SF Mono",ui-monospace,Menlo,monospace; }
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+  canvas{display:block;cursor:crosshair}
+  b{color:var(--accent);font-weight:600}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--brd);border-radius:16px;pointer-events:none;
+    backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);
+    box-shadow:0 10px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07),0 0 0 1px rgba(0,0,0,.25)}
+  .panel::before{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+    background:linear-gradient(135deg,var(--glow),transparent 35%);opacity:.5}
+  .hdr{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+  .hdr i{font-style:normal;color:var(--accent2)}
+  #mission{left:18px;top:18px;width:340px;padding:14px 16px 12px}
+  #instr{left:18px;bottom:18px;width:340px;padding:12px 16px 12px}
+  #keys{right:18px;top:18px;width:270px;padding:12px 14px;font-size:12px;line-height:1.75}
+  #coach{left:50%;bottom:20px;transform:translateX(-50%);padding:10px 20px;font-size:14px;max-width:min(620px,48vw);text-align:center;line-height:1.45;transition:opacity .3s}
+  .warpnum{font-size:24px;font-weight:800;color:var(--accent2);font-family:var(--mono);margin:0 10px 0 4px;vertical-align:-3px;text-shadow:0 0 14px var(--glow)}
+  #coach .tag{font-size:10px;letter-spacing:.2em;color:var(--accent2);display:block;margin-bottom:2px}
+  #toasts{position:fixed;left:50%;top:18px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;z-index:5}
+  .toast{padding:7px 16px;border-radius:99px;font-weight:600;font-size:14px;background:var(--panel);border:1px solid var(--brd);
+    backdrop-filter:blur(10px);box-shadow:0 6px 24px rgba(0,0,0,.4);animation:toast 2.8s ease forwards}
+  .toast.gain{color:var(--warn);border-color:rgba(255,179,107,.5)} .toast.lose{color:var(--accent2);border-color:rgba(127,200,255,.5)}
+  .toast.good{color:var(--good);border-color:rgba(157,255,181,.5)} .toast.bad{color:var(--bad)}
+  @keyframes toast{0%{opacity:0;transform:translateY(-8px) scale(.96)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
+  .title{font-size:19px;font-weight:700;letter-spacing:.02em;margin:0 0 2px}
+  .sub{font-size:12px;color:var(--dim)}
+  .route{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0 8px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:var(--faint);border:1px solid var(--brd);font-weight:600}
+  .chip.now{border-color:var(--accent);box-shadow:0 0 12px var(--glow)}
+  .chip .dot{width:10px;height:10px;border-radius:50%;box-shadow:0 0 6px currentColor}
+  .arrow{color:var(--dim)}
+  .pips{display:flex;gap:5px;margin:8px 0 4px}
+  .pips span{flex:1;height:6px;border-radius:3px;background:var(--faint)} .pips span.on{background:linear-gradient(90deg,var(--accent2),var(--accent))}
+  .row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--dim);margin:4px 0}
+  .row b,.num{color:var(--ink);font-family:var(--mono);font-weight:500}
+  .bar{height:5px;border-radius:3px;background:var(--faint);overflow:hidden;margin-top:3px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:3px}
+  .stars{color:var(--accent);letter-spacing:1px;font-size:13px}
+  .gauge{position:relative;height:30px;margin:8px 0 4px}
+  .gauge .track{position:absolute;left:0;right:0;top:12px;height:6px;border-radius:3px;background:var(--faint)}
+  .gauge .band{position:absolute;top:10px;height:10px;border-radius:5px;background:linear-gradient(90deg,rgba(127,200,255,.55),rgba(127,200,255,.9));box-shadow:0 0 10px var(--glow)}
+  .gauge .tgt{position:absolute;top:6px;height:18px;border-radius:4px;background:rgba(255,210,138,.25);border:1px solid var(--accent)}
+  .gauge .tick{position:absolute;top:-2px;font-size:9.5px;color:var(--dim);transform:translateX(-50%);font-family:var(--mono);white-space:nowrap}
+  .gauge{margin:12px 8px 8px}
+  .gauge .tick.lo{top:23px}
+  .gauge + .row{margin-top:14px}
+  .ok{color:var(--good)!important} .warn{color:var(--warn)!important} .bad{color:var(--bad)!important}
+  kbd{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:5px;background:var(--faint);border:1px solid var(--brd);border-bottom-width:2px;color:var(--ink);white-space:nowrap}
+  #keys .k{display:flex;justify-content:space-between;gap:10px} #keys .k span:last-child{color:var(--dim);text-align:right}
+  #keys .sep{height:1px;background:var(--brd);margin:6px 0}
+  #done{left:50%;top:46%;transform:translate(-50%,-50%);width:min(760px,86vw);padding:26px 30px;font-size:14px;line-height:1.6;display:none;z-index:10}
+  #done h2{margin:0 0 4px;font-size:24px;letter-spacing:.03em} #done .lede{color:var(--dim);margin-bottom:12px}
+  #done .cols{display:grid;grid-template-columns:330px 1fr;gap:22px;align-items:center}
+  #done svg{width:100%;height:auto;border-radius:12px;background:rgba(0,0,0,.25);border:1px solid var(--brd)}
+  #done .foot{margin-top:14px;font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+  #done .dots span{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--faint);margin:0 3px} #done .dots span.on{background:var(--accent)}
+  #done ul{margin:6px 0;padding-left:18px} #done li{margin:3px 0}
+  #log{position:fixed;right:22px;bottom:6px;font-size:10px;color:var(--dim);opacity:.6;font-family:var(--mono);pointer-events:none}
+  .hide{display:none!important}
+  #done svg .o{fill:none;stroke:var(--dim);stroke-width:1.2;stroke-dasharray:3 4;opacity:.75}
+  #done svg .o2{fill:none;stroke:var(--accent);stroke-width:1.4;opacity:.8}
+  #done svg .p{fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round}
+  #done svg .pk{fill:none;stroke:var(--accent2);stroke-width:2;stroke-dasharray:6 5}
+  #done svg .gd{fill:none;stroke:var(--good);stroke-width:1.6;stroke-dasharray:4 4}
+  #done svg .bd{fill:none;stroke:var(--bad);stroke-width:1.6;opacity:.7}
+  #done svg .sun{fill:#ffb066;filter:drop-shadow(0 0 6px #ff9a40)} #done svg .pl{fill:var(--accent2)} #done svg .tg{fill:var(--accent)}
+  #done svg .gas{fill:#d9a066} #done svg .me{fill:#fff} #done svg .ah{fill:var(--warn)} #done svg .ah2{fill:var(--accent2)}
+  #done svg .w{stroke:var(--warn);stroke-width:2.4;fill:none} #done svg .g2{stroke:var(--accent2);stroke-width:2;fill:none}
+  #done svg text{fill:var(--ink);font:10.5px var(--mono)} #done svg .dim{fill:var(--dim)} #done svg .acc{fill:var(--accent)} #done svg .ok{fill:var(--good)}
+  #done svg .warnt{fill:var(--warn)}
+</style>
+</head>
+<body data-theme="nebula">
+<canvas id="c"></canvas>
+<div id="mission" class="panel"></div>
+<div id="instr" class="panel"></div>
+<div id="keys" class="panel"></div>
+<div id="coach" class="panel"></div>
+<div id="toasts"></div>
+<div id="done" class="panel"></div>
+<div id="log"></div>
+<script>
+'use strict';
+// ============================================================
+//  Orbital Courier — 2D prototype
+//  Gravity is REAL and summed from every body, every step.
+//  Planets ride Keplerian rails, so the field is always shifting.
+//  No trajectory prediction: you learn the sky by feel.
+// ============================================================
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const missionEl = $('mission'), instrEl = $('instr'), keysEl = $('keys'), coachEl = $('coach'), toastsEl = $('toasts'), logEl = $('log');
+let keysFull = false;
+function toast(text, cls = '') {
+  const d = document.createElement('div'); d.className = 'toast ' + cls; d.textContent = text;
+  toastsEl.appendChild(d); setTimeout(() => d.remove(), 2800);
+}
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight;
+  cv.width = (W * DPR) | 0; cv.height = (H * DPR) | 0;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+}
+addEventListener('resize', resize); resize();
+
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// ---------------- tuning ----------------
+const T = {
+  G: 1, soft2: 25,
+  walk: 170, jumpMin: 90, jumpMax: 340, chargeTime: 0.7,
+  kick: 90, kickMax: 2, kickRecharge: 5, kickMinPow: 0.2, kickChargeTime: 0.8,   // hold Space in flight: 20%→100% power
+  // ANCHOR (Shift): a tether to one world within range. Ring shows which; Q/Tab switches; locked while held.
+  anchorRange: 650, anchorAccel: 240, anchorDamp: 0.8, anchorRamp: 0.35, anchorTargetBias: 0.5, anchorKeep: 1.25,
+  coronaR: 260, sunSpit: 90,          // too close to the sun: anchor disabled so the solar bounce always carries you out
+  wallR: 2600, wallK: 0.06,   // gentle outer wall beyond every world: far drifts turn back sooner
+  sunDens: 18, worldDens: 16, levelGoal: 5,
+  playerR: 7, lostDist: 9000,
+  haloR: 1100, haloExp: 0.5,   // beyond this the sun's pull stops weakening (a 'halo' bowl): nothing escapes forever, big jumps become long swoops
+  seedDens: 12, seedMinR: 10, seedMaxR: 36, seedGrow: 2.5, seedHold: 1.2,
+  grazeAlt: 28, grazeSpeed: 180, slingMin: 15,
+  warpMax: 8, warpLead: 2.5, ripZoom: 1.25,   // F: warp up to ×8, braking so events arrive ≥2.5 s real-time away
+  forecastH: 10, camScale: 1,   // forecast horizon (s); camera zoom scale for the level
+  tipWindow: 30, par: 25,       // seconds: tip runs out / ★ for a delivery at or under par
+  step: 1 / 240,
+};
+
+// ---------------- bodies ----------------
+function body(o) {
+  return Object.assign({ x: 0, y: 0, vx: 0, vy: 0, r: 10, dens: 16, M: 0, parent: null, R: 0, phase: 0, w: 0,
+    color: '#888', name: '', ghost: false, seed: false, gas: false }, o);
+}
+// ---------------- levels: each has its own star system + physics settings ----------------
+let hub, kettle, pip, brindle, bellows, twins, ada, bo, outpost, rocks;     // Level 1 system
+let dock, ferry, anvil, wisp, lantern, tern;                                  // Level 2 system
+let bodies = [], level = 1;
+
+function buildL1() {
+  hub     = body({ name: 'Hearth',  r: 110, dens: T.sunDens, color: '#f2a65a' });
+  kettle  = body({ name: 'Kettle',  r: 45, parent: hub, R: 520, phase: 0.3, color: '#6fb3d2' });
+  pip     = body({ name: 'Pip',     r: 16, parent: kettle, R: 115, phase: 1.0, color: '#c9c4b8' });
+  brindle = body({ name: 'Brindle', r: 52, dens: 12, parent: hub, R: 900, phase: 2.4, color: '#8fcf7a' });
+  bellows = body({ name: 'Bellows', r: 72, dens: 14, parent: hub, R: 1180, phase: 0.9, color: '#d9a066', gas: true });  // gas giant: bounce, don't land
+  twins   = body({ ghost: true, r: 0, parent: hub, R: 1520, phase: 4.1 });   // binary barycenter
+  ada     = body({ name: 'Ada',     r: 28, parent: twins, R: 78, phase: 0, color: '#d98bd0' });
+  bo      = body({ name: 'Bo',      r: 28, parent: twins, R: 78, phase: Math.PI, color: '#b28be0' });
+  outpost = body({ name: 'Outpost', r: 40, parent: hub, R: 2250, phase: 5.4, color: '#e3d26b' });
+  rocks = [[1820, 0.4, 11], [1850, 1.6, 9], [1880, 2.9, 13], [1915, 3.8, 10], [1950, 5.0, 12]]
+    .map(([R, phase, r]) => body({ r, dens: 14, parent: hub, R, phase, color: '#9a8f86' }));
+  bodies = [hub, kettle, pip, brindle, bellows, twins, ada, bo, outpost, ...rocks];   // parents before children
+}
+
+// Level 2 "Outer Run": a wide system where your own push is small next to orbital speeds,
+// so the outer worlds need a slingshot. Worlds are spread out so each still has room to hop.
+function buildL2() {
+  hub     = body({ name: 'Cinder',  r: 120, dens: T.sunDens, color: '#ff8f5a' });
+  dock    = body({ name: 'Dock',    r: 40, dens: T.worldDens, parent: hub, R: 1100, phase: 0.0, color: '#6fb3d2' });
+  ferry   = body({ name: 'Ferry',   r: 36, dens: 9, parent: hub, R: 1550, phase: 2.2, color: '#8fcf7a' });
+  anvil   = body({ name: 'Anvil',   r: 90, dens: 10, parent: hub, R: 2050, phase: 1.1, color: '#d9a066', gas: true });
+  wisp    = body({ name: 'Wisp',    r: 18, dens: T.worldDens, parent: anvil, R: 270, phase: 0.5, color: '#c9c4b8' });
+  lantern = body({ name: 'Lantern', r: 40, dens: T.worldDens, parent: hub, R: 3200, phase: 3.6, color: '#e3d26b' });
+  tern    = body({ name: 'Tern',    r: 34, dens: T.worldDens, parent: hub, R: 4000, phase: 5.0, color: '#d98bd0' });
+  bodies  = [hub, dock, ferry, anvil, wisp, lantern, tern];
+}
+
+const BASE_T = Object.assign({}, T);
+const LEVELS = {
+  1: { name: 'Courier', build: buildL1, start: () => kettle, dust: [1760, 2040, 420],
+       T: {},   // the base tuning above
+       script: () => [[kettle, pip], [pip, brindle], [brindle, kettle], [kettle, ada], [bo, outpost]],
+       intro: 'Walk to the parcel, hop toward Pip — mid-air, Q to ring Pip, hold Shift to anchor' },
+  2: { name: 'Outer Run', build: buildL2, start: () => dock, dust: [2480, 2900, 650],
+       T: { sunDens: 60, worldDens: 7, haloR: 4600, wallR: 4700, lostDist: 14000, coronaR: 300, sunSpit: 120,
+            jumpMin: 80, jumpMax: 145, kick: 25, kickMax: 1, kickRecharge: 6, forecastH: 45, camScale: 0.55, tipWindow: 120, par: 90,
+            anchorRange: 550, anchorAccel: 120, anchorDamp: 1.5 },   // anchor = landing gear: catches & settles you near a world, can't carry you between orbits
+       assistT: { anchorRange: 650, anchorAccel: 240 },
+       script: () => [[dock, ferry], [ferry, wisp], [wisp, lantern], [lantern, dock], [dock, tern]],
+       hints: ['Ferry is a short hop — Shift near it to settle in.',
+               'Fall toward Anvil and let its pull catch you; Wisp is its moon.',
+               "Lantern is too far to jump. Leap off Wisp the way it's moving around Anvil — you'll steal Anvil's speed.",
+               'Coming home: pass IN FRONT of a world to shed speed, or just fall — the sun pulls you in.',
+               'Tern is the farthest. Chain a slingshot: graze the trailing side of Anvil (behind it as it moves).'],
+       intro: 'Your anchor is now <b>landing gear</b> — short range, it settles you onto a world but can\'t carry you.<br>' +
+              'Outer worlds are too far to jump. <b>Slingshot</b>: pass close <b>behind</b> a moving world to steal its speed,<br>' +
+              'in front of it to lose speed. Gas giants (Anvil) can\'t be landed on — they bounce you.<br>' +
+              'Your trail glows <span style="color:#ffb36b">warm</span> while you gain energy, <span style="color:#6bc8ff">cool</span> while you lose it.<br>' +
+              '<span style="opacity:.7">Too tough? Press <b>G</b> for Assist (Level 1 anchor).</span>' },
+};
+let assist = false;
+
+function finishBodies() {
+  for (const b of bodies) b.M = b.ghost ? 0 : b.dens * b.r ** 3;
+  for (const b of bodies) {
+    if (!b.parent) continue;
+    if (b.parent.ghost) b.w = Math.sqrt(T.G * b.M / (4 * b.R ** 3));          // equal-mass binary
+    else b.w = Math.sqrt(pull(b.parent, b.R) / b.R);                             // circular orbit for that force law
+  }
+  // Hill sphere: the region where a world's gravity, not its parent's, decides your orbit
+  for (const b of bodies) {
+    b.hill = 0;
+    if (!b.parent || b.ghost || b.seed) continue;
+    if (b.parent === hub || b.parent.ghost) b.hill = (b.parent === hub ? b.R : b.parent.R) * Math.cbrt(b.M / (3 * hub.M));
+    else b.hill = b.R * Math.cbrt(b.M / (3 * b.parent.M));
+  }
+  // sun potential table (for flyby energy accounting)
+  PHI.length = 0; let acc = 0;
+  for (let r = PHI_MAX; r >= 0; r -= PHI_STEP) { PHI[Math.round(r / PHI_STEP)] = -acc; acc += pull(hub, Math.max(r, 1)) * PHI_STEP; }
+}
+const PHI = [], PHI_STEP = 5, PHI_MAX = 20000;
+const phiSun = r => {   // linear interpolation (a stepped table makes the energy readout jitter)
+  const f = Math.min(PHI.length - 1.001, Math.max(0, r / PHI_STEP)), i = Math.floor(f);
+  return PHI[i] + (PHI[i + 1] - PHI[i]) * (f - i);
+};
+// heliocentric orbital energy (sun only) — changes only through planets, kicks, and the anchor
+const helioE = () => (P.vx * P.vx + P.vy * P.vy) / 2 + phiSun(Math.hypot(P.x - hub.x, P.y - hub.y));
+
+function applyTuning(n) {
+  for (const k in BASE_T) T[k] = BASE_T[k];
+  Object.assign(T, LEVELS[n].T);
+  if (assist && LEVELS[n].assistT) Object.assign(T, LEVELS[n].assistT);
+}
+
+function placeBodies(t) {
+  for (const b of bodies) {
+    if (!b.parent) continue;
+    const p = b.parent, th = b.phase + b.w * t, c = Math.cos(th), s = Math.sin(th);
+    b.x = p.x + b.R * c; b.y = p.y + b.R * s;
+    b.vx = p.vx - b.R * b.w * s; b.vy = p.vy + b.R * b.w * c;
+  }
+}
+
+// gravity magnitude from body b at distance d. Inverse-square everywhere, except the sun,
+// whose pull flattens to a constant beyond haloR so the system is a bowl you can't escape.
+function pull(b, d) {
+  if (b === hub && d > T.haloR) return T.G * b.M / (T.haloR * T.haloR) * Math.pow(d / T.haloR, T.haloExp) + (d > T.wallR ? T.wallK * (d - T.wallR) : 0);
+  return T.G * b.M / (d * d + T.soft2);
+}
+const G0 = { ax: 0, ay: 0, dom: null };
+function gravAt(x, y, out) {
+  let ax = 0, ay = 0, best = hub, bestG = -1;
+  for (const b of bodies) {
+    if (b.M <= 0) continue;
+    const dx = b.x - x, dy = b.y - y, d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+    const g = pull(b, d);
+    ax += g * dx / d; ay += g * dy / d;
+    if (g > bestG) { bestG = g; best = b; }
+  }
+  out.ax = ax; out.ay = ay; out.dom = best;
+}
+
+// ---------------- player ----------------
+const P = {
+  x: 0, y: 0, vx: 0, vy: 0, on: null, ang: -Math.PI / 2, walkV: 0,
+  charging: false, charge: 0, kicks: T.kickMax, kickT: 0, reach: null, anchor: null, anchorPick: null, anchorLock: false, reachT: 0, lastBody: null, pass: null, skipBody: null, chain: 0, Eprev: 0,
+  fullHold: 0, grazes: new Set(), orbBody: null, orbAng: 0, orbSwept: 0, trail: [],
+};
+
+// ---------------- game state ----------------
+let simT = 0, credits = 0, delivered = 0, seeds = 3, job = null, jobTimer = 0;
+const popups = [], particles = [];
+function popup(x, y, text, color = '#ffd28a') { popups.push({ x, y, text, color, t: 0 }); }
+function burst(x, y, color, n = 14, sp = 120) {
+  for (let i = 0; i < n; i++) { const a = rand(0, TAU), v = rand(0.3, 1) * sp;
+    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.4, 0.9), max: 0.9, color }); }
+}
+
+let levelDone = false, lvlCount = 0, paused = false, levelStars = 0;
+function newJob() {
+  const SCRIPT = LEVELS[level].script();
+  if (lvlCount < SCRIPT.length) {
+    const [from, to] = SCRIPT[lvlCount];
+    job = { from, to, ang: lvlCount === 0 ? -Math.PI / 2 + 0.5 : rand(0, TAU), state: 'wait', value: (level === 2 ? 40 : 20) + lvlCount * 5, t0: 0, style: 0, tNew: simT };
+    logEv('job', { from: from.name, to: to.name, value: job.value, scripted: true, level });
+    const hint = LEVELS[level].hints && LEVELS[level].hints[lvlCount];
+    if (hint) setTimeout(() => popup(P.x, P.y - 40, hint, '#9ad8ff'), 900);
+    return;
+  }
+  const pool = bodies.filter(b => b.name && !b.seed && b !== hub && !b.gas);
+  let from, to;
+  do { from = pool[(Math.random() * pool.length) | 0]; to = pool[(Math.random() * pool.length) | 0]; } while (from === to);
+  const rf = from.parent === hub ? from.R : from.parent ? from.parent.R : 0;
+  const rt = to.parent === hub ? to.R : to.parent ? to.parent.R : 0;
+  job = { from, to, ang: rand(0, TAU), state: 'wait', value: 15 + Math.round(Math.abs(rf - rt) / 40), t0: 0, style: 0, tNew: simT };
+  logEv('job', { from: from.name, to: to.name, value: job.value });
+}
+
+function addStyle(pts, text, color) {
+  credits += pts; if (job && job.state === 'carry') job.style += pts;
+  popup(P.x, P.y, text + ' +' + pts, color);
+  logEv('style', { kind: text, pts });
+  if (LOG.flight) { if (text.startsWith('graze')) LOG.flight.grazes++; else if (text.startsWith('full orbit')) LOG.flight.orbits++; }
+}
+
+// ---------------- telemetry ----------------
+// Records play so we can tune feel from real data. Sent to server.js (logs/) when served over http,
+// otherwise kept in localStorage — press L to download.
+const LOG = {
+  id: new Date().toISOString().replace(/[:.]/g, '-'),
+  meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 10,
+          bodies: [] },
+  events: [], samples: [],
+  perf: { frames: 0, hitches: 0, worstMs: 0, inputLatMs: [] },
+  flight: null, landT: 0, status: 'local',
+};
+function logEv(type, data) { LOG.events.push(Object.assign({ t: +simT.toFixed(2), type }, data || {})); }
+const bname = b => b ? (b.name || (b.seed ? 'seed' : b.ghost ? 'ghost' : 'rock')) : null;
+let pendingInputTs = [];
+function flushLog(final) {
+  const body = JSON.stringify(LOG, (k, v) => k === 'flight' ? undefined : v);
+  try { localStorage.setItem('oc-log-latest', body); } catch (e) {}
+  if (!location.protocol.startsWith('http')) return;
+  const url = '/log?id=' + LOG.id;
+  if (final && navigator.sendBeacon) { navigator.sendBeacon(url, body); return; }
+  fetch(url, { method: 'POST', body, headers: { 'content-type': 'application/json' } })
+    .then(r => LOG.status = r.ok ? 'saved' : 'error ' + r.status).catch(() => LOG.status = 'offline');
+}
+addEventListener('pagehide', () => { logEv('session_end'); flushLog(true); });
+function downloadLog() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(LOG, (k, v) => k === 'flight' ? undefined : v)], { type: 'application/json' }));
+  a.download = 'orbital-log-' + LOG.id + '.json'; a.click();
+}
+
+// ---------------- player actions ----------------
+function land(b) {
+  const a = Math.atan2(P.y - b.y, P.x - b.x);
+  const rx = P.vx - b.vx, ry = P.vy - b.vy;
+  const impact = Math.hypot(rx, ry);
+  if (LOG.flight) {
+    const f = LOG.flight;
+    logEv('land', { to: bname(b), from: f.from, dur: +(simT - f.t0).toFixed(2), impact: impact | 0, charge: f.charge,
+      launch: f.launch, maxSun: f.maxSun | 0, kicks: f.kicks, heavy: +f.heavy.toFixed(2), airSteer: f.airSteer,
+      extraSpace: f.extraSpace, grazes: f.grazes, orbits: f.orbits, flybys: f.flybys || 0, carrying: !!(job && job.state === 'carry'),
+      target: job ? bname(job.state === 'wait' ? job.from : job.to) : null });
+    LOG.flight = null;
+  }
+  LOG.landT = simT;
+  P.pass = null; P.chain = 0; P.kickCharging = false;
+  P.on = b; P.ang = a; P.lastBody = b; P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.kicks = T.kickMax; P.kickT = 0;
+  P.walkV = clamp((rx * -Math.sin(a) + ry * Math.cos(a)) * 0.4, -T.walk, T.walk);
+  P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
+  if (impact > 120) burst(P.x, P.y, b.color, 10, impact * 0.3);
+  if (job && job.state === 'carry' && b === job.to) {
+    const tip = Math.max(0, Math.round(T.tipWindow - (simT - job.t0)) * (level === 2 ? 0.5 : 1)) | 0;
+    const pay = job.value + tip;
+    credits += pay; delivered++; lvlCount++;
+    const carryT = simT - job.t0, smart = (job.slings || 0) > 0 || (job.kicks || 0) <= 1;
+    const stars = 1 + (carryT <= T.par ? 1 : 0) + (smart ? 1 : 0);
+    levelStars += stars;
+    toast(`${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}  Delivered to ${b.name} · +${pay}`, 'good');
+    if (stars < 3) setTimeout(() => toast(carryT > T.par ? `★ for under ${T.par}s door-to-door` : `★ for a slingshot or ≤1 kick`, ''), 400);
+    logEv('deliver', { stars, kicks: job.kicks || 0, slings: job.slings || 0, to: bname(b), pay, tip, style: job.style, carry: +(simT - job.t0).toFixed(1), total: +(simT - job.tNew).toFixed(1) });
+    popup(P.x, P.y, `Delivered! +${pay} (tip ${tip}${job.style ? ', style ' + job.style : ''})`, '#9dffb5');
+    burst(P.x, P.y, '#ffd28a', 30, 220);
+    if (lvlCount % 2 === 0) { seeds++; setTimeout(() => popup(P.x, P.y, '+1 seed moon', '#7dffb0'), 600); }
+    job.state = 'done'; jobTimer = 1.0;
+    if (lvlCount === T.levelGoal && !levelDone) {
+      levelDone = true;
+      const lt = simT - levelT0; logEv('level_complete', { level, credits, time: +lt.toFixed(1), assist });
+      const m = Math.floor(lt / 60), sec = Math.round(lt % 60), next = LEVELS[level + 1];
+      showPanel(`<h2 class="ok">Level ${level} complete</h2>
+        <div class="lede">${T.levelGoal} parcels in ${m}m ${sec}s · ${credits} credits · <span class="stars">${'★'.repeat(levelStars)}</span> ${levelStars}/${T.levelGoal * 3}</div>
+        <span style="opacity:.8">${next ? `Press <b>Enter</b> for Level ${level + 1}: ${next.name} · <b>Esc</b> to keep flying here` : 'Press <b>Enter</b> to keep flying (free deliveries)'}</span>`,
+        next ? () => startLevel(level + 1) : null);
+    }
+  }
+}
+
+function jump() {
+  const b = P.on, a = P.ang, s = lerp(T.jumpMin, T.jumpMax, P.charge);
+  const ux = Math.cos(a), uy = Math.sin(a);
+  P.vx = b.vx + ux * s - uy * P.walkV;
+  P.vy = b.vy + uy * s + ux * P.walkV;
+  P.x += ux * 1.5; P.y += uy * 1.5;
+  logEv('jump', { from: bname(b), charge: +P.charge.toFixed(2), speed: s | 0, walkV: P.walkV | 0,
+    dwell: +(simT - LOG.landT).toFixed(2), fullHold: +P.fullHold.toFixed(2) });
+  LOG.flight = { t0: simT, from: bname(b), charge: +P.charge.toFixed(2), launch: s | 0, maxSun: 0, kicks: 0, heavy: 0,
+    airSteer: 0, extraSpace: 0, grazes: 0, orbits: 0 };
+  P.on = null; P.charge = 0; P.charging = false; P.fullHold = 0;
+  P.pass = null; P.skipBody = b; P.chain = 0;
+  if (s > 300) burst(P.x, P.y, '#cfe3ff', 8, 80);
+}
+
+// ---------------- anchor ----------------
+const currentTarget = () => job && job.state !== 'done' ? (job.state === 'wait' ? job.from : job.to) : null;
+function anchorCandidates() {
+  const list = [];
+  for (const b of bodies) {
+    if (b.ghost || b === hub || b.gas) continue;
+    const sd = Math.hypot(b.x - P.x, b.y - P.y) - b.r;
+    if (sd <= T.anchorRange) list.push([b, sd]);
+  }
+  return list.sort((a, b) => a[1] - b[1]);
+}
+const inCorona = () => Math.hypot(P.x - hub.x, P.y - hub.y) < T.coronaR;
+function chooseAnchor() {
+  const c = anchorCandidates();
+  if (P.anchorPick) { if (c.some(x => x[0] === P.anchorPick)) return P.anchorPick; P.anchorPick = null; }
+  const want = currentTarget(), score = (b, sd) => b === want ? sd * T.anchorTargetBias : sd;
+  let best = null, bs = Infinity, cur = Infinity;
+  for (const [b, sd] of c) { const sc = score(b, sd); if (sc < bs) { bs = sc; best = b; } if (b === P.anchor) cur = sc; }
+  return cur < bs * T.anchorKeep ? P.anchor : best;   // a little stickiness so the ring doesn't flicker
+}
+function cycleAnchor() {
+  if (P.on) return;
+  const c = anchorCandidates();
+  if (!c.length) { popup(P.x, P.y, 'no world in reach', '#ff9c9c'); logEv('anchor_cycle', { to: null }); return; }
+  const i = c.findIndex(x => x[0] === P.anchor), nb = c[(i + 1) % c.length][0];
+  P.anchorPick = nb; P.anchor = nb; if (P.anchorLock) P.reachT = 0;
+  logEv('anchor_cycle', { to: bname(nb), n: c.length });
+}
+function anchorPress() {
+  if (P.on) return;
+  P.anchorLock = true; P.reachT = 0;
+  if (!P.anchor) P.anchor = chooseAnchor();
+  logEv('anchor', { to: bname(P.anchor), corona: inCorona(), picked: !!P.anchorPick });
+  if (!P.anchor) popup(P.x, P.y, 'nothing in reach', '#ff9c9c');
+  else if (inCorona()) popup(P.x, P.y, 'too close to the sun', '#ffcf6b');
+}
+
+// Kick direction: arrows aim it (screen-relative). No arrow = along your motion relative to your anchor
+// (or whatever pulls hardest) — so kicking at your fastest pass still adds the most energy (Oberth).
+// The body you're orbiting: the smallest Hill sphere you're inside (else the star).
+function refBody(x = P.x, y = P.y) {
+  let best = hub, bh = Infinity;
+  for (const b of bodies) if (b.hill && b.hill < bh && Math.hypot(x - b.x, y - b.y) < b.hill) { bh = b.hill; best = b; }
+  return best;
+}
+// Orbital directions relative to the body you orbit: prograde (along motion), retrograde, radial out / in.
+function orbitAxes(ref = refBody()) {
+  const rx = P.vx - ref.vx, ry = P.vy - ref.vy, L = Math.hypot(rx, ry) || 1;
+  const ox = P.x - ref.x, oy = P.y - ref.y, O = Math.hypot(ox, oy) || 1;
+  return { ref, pro: [rx / L, ry / L], out: [ox / O, oy / O], speed: L };
+}
+// Kick direction. W/S = prograde/retrograde, A/D = radial in/out (the real orbital controls).
+// Arrows still aim on screen. No key = prograde.
+function kickDir() {
+  const ax = orbitAxes();
+  let dx = 0, dy = 0;
+  if (keys.w) { dx += ax.pro[0]; dy += ax.pro[1]; }
+  if (keys.s) { dx -= ax.pro[0]; dy -= ax.pro[1]; }
+  if (keys.d) { dx += ax.out[0]; dy += ax.out[1]; }
+  if (keys.a) { dx -= ax.out[0]; dy -= ax.out[1]; }
+  if (dx || dy) { const n = Math.hypot(dx, dy); return [dx / n, dy / n, 'orbit']; }
+  const sx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), sy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+  if (sx || sy) {
+    const L = Math.hypot(sx, sy), c = Math.cos(cam.rot), s = Math.sin(cam.rot);
+    return [(sx * c - sy * s) / L, (sx * s + sy * c) / L, 'aim'];
+  }
+  return [ax.pro[0], ax.pro[1], 'prograde'];
+}
+// Osculating orbit around the star from a state: turning points of the effective potential (works with the halo too),
+// plus the Kepler ellipse when the whole orbit is inside the inverse-square region.
+function oscOrbit(x = P.x, y = P.y, vx = P.vx, vy = P.vy) {
+  const rx = x - hub.x, ry = y - hub.y, r = Math.hypot(rx, ry) || 1, v2 = vx * vx + vy * vy;
+  const E = v2 / 2 + phiSun(r), h = rx * vy - ry * vx, U = q => h * h / (2 * q * q) + phiSun(q);
+  let Ap = r, Pe = r;
+  while (Ap < 16000 && U(Ap + 10) <= E) Ap += 10;
+  while (Pe > 10 && U(Pe - 10) <= E) Pe -= 10;
+  const out = { Ap: Ap >= 16000 ? Infinity : Ap, Pe, E, h, ellipse: null };
+  if (out.Ap < T.haloR) {
+    const mu = T.G * hub.M, rv = rx * vx + ry * vy;
+    const ex = ((v2 - mu / r) * rx - rv * vx) / mu, ey = ((v2 - mu / r) * ry - rv * vy) / mu, e = Math.hypot(ex, ey);
+    const a = 1 / (2 / r - v2 / mu);
+    if (e < 0.98 && a > 0) out.ellipse = { a, b: a * Math.sqrt(1 - e * e), e, ang: Math.atan2(ey, ex) };
+  }
+  return out;
+}
+const orbitRadiusOf = b => !b ? 0 : b.parent === hub ? b.R : b.parent ? b.parent.R : 0;
+function kick(pow = 1) {
+  if (P.kicks <= 0) return;
+  gravAt(P.x, P.y, G0);
+  const k = kickDir(); if (!k) return;
+  const [dx, dy, mode] = k;
+  P.vx += dx * T.kick * pow; P.vy += dy * T.kick * pow;
+  P.kicks--; P.kickT = 0;
+  const ref = refBody();
+  if (job && job.state === 'carry') job.kicks = (job.kicks || 0) + 1;
+  logEv('kick', { mode, pow: +pow.toFixed(2), ref: bname(ref), ang: +Math.atan2(dy, dx).toFixed(2), speed: Math.hypot(P.vx, P.vy) | 0,
+    tFlight: LOG.flight ? +(simT - LOG.flight.t0).toFixed(2) : null });
+  if (LOG.flight) LOG.flight.kicks++;
+  burst(P.x, P.y, mode === 'aim' ? '#6bc8ff' : '#ffb36b', 12, 140);
+}
+
+function respawn(msg) {
+  if (LOG.flight) {
+    const f = LOG.flight;
+    logEv('flight_end', { reason: msg || 'reset', from: f.from, dur: +(simT - f.t0).toFixed(2), charge: f.charge,
+      maxSun: f.maxSun | 0, kicks: f.kicks, heavy: +f.heavy.toFixed(2), airSteer: f.airSteer, extraSpace: f.extraSpace });
+    LOG.flight = null;
+  }
+  if (msg) logEv('respawn', { reason: msg });
+  const b = P.lastBody && bodies.includes(P.lastBody) ? P.lastBody : LEVELS[level].start();
+  P.pass = null; P.chain = 0;
+  P.on = b; P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.ang = rand(0, TAU); P.walkV = 0; P.kicks = T.kickMax; P.kickT = 0; P.trail.length = 0;
+  P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
+  if (job && job.state === 'carry') { job.state = 'wait'; popup(b.x, b.y, 'parcel returned to ' + job.from.name, '#ff9c9c'); }
+  if (msg) popup(b.x, b.y - b.r - 30, msg, '#ff9c9c');
+}
+
+// ---------------- seeds (build layer) ----------------
+let planting = null; // {x,y,t}
+// annulus (distance from the sun) that a moving body sweeps over time
+function sweptBand(b) {
+  if (!b.parent || b.ghost || b.seed) return null;
+  if (b.parent === hub) return [b.R - b.r, b.R + b.r];
+  const pr = b.parent.R;   // moon / binary member: parent orbits the sun
+  return [pr - b.R - b.r, pr + b.R + b.r];
+}
+function seedProblem(x, y, r) {
+  for (const b of bodies) if (!b.ghost && Math.hypot(b.x - x, b.y - y) < b.r + r + 30) return 'too close to ' + (bname(b) === 'rock' ? 'a rock' : bname(b));
+  const sd = Math.hypot(x, y);
+  if (sd > T.wallR) return 'too far out';
+  for (const b of bodies) {
+    const band = sweptBand(b); if (!band) continue;
+    if (sd + r > band[0] - 8 && sd - r < band[1] + 8) return 'in ' + (b.name ? b.name + "'s" : "the rocks'") + ' path';
+  }
+  return null;
+}
+const seedOk = (x, y, r) => !seedProblem(x, y, r);
+function plantSeed(x, y, r) {
+  const s = body({ seed: true, born: simT, x, y, r: 3, targetR: r, dens: T.seedDens, color: '#7dffb0' });
+  s.M = s.dens * s.r ** 3; bodies.push(s); seeds--;
+  logEv('seed_plant', { r: +r.toFixed(1), x: x | 0, y: y | 0, sunDist: Math.hypot(x, y) | 0 });
+  burst(x, y, '#7dffb0', 16, 90);
+}
+function removeSeed(s, msg) {
+  const i = bodies.indexOf(s); if (i < 0) return;
+  bodies.splice(i, 1); seeds++;
+  logEv('seed_remove', { reason: msg, age: s.born != null ? +(simT - s.born).toFixed(1) : null });
+  if (P.on === s) { P.on = null; P.vx = 0; P.vy = 0; }
+  burst(s.x, s.y, '#7dffb0', 20, 150);
+  if (msg) popup(s.x, s.y, msg, '#7dffb0');
+}
+function updateSeeds(dt) {
+  for (const s of bodies) {
+    if (!s.seed) continue;
+    if (s.r < s.targetR) { s.r = Math.min(s.targetR, s.r + (s.targetR / T.seedGrow) * dt); s.M = s.dens * s.r ** 3; }
+  }
+  for (const s of bodies.slice()) {
+    if (!s.seed) continue;
+    for (const b of bodies) {
+      if (b.seed || b.ghost) continue;
+      if (Math.hypot(b.x - s.x, b.y - s.y) < b.r + s.r) { removeSeed(s, (b.name || 'a rock') + ' crushed your seed (refunded)'); break; }
+    }
+  }
+}
+
+// ---------------- simulation step ----------------
+function step(dt) {
+  simT += dt;
+  placeBodies(simT);
+  updateSeeds(dt);
+
+  if (P.on) {
+    const b = P.on, rr = b.r + T.playerR;
+    const dir = (keys.right || keys.d ? 1 : 0) - (keys.left || keys.a ? 1 : 0);
+    P.walkV += (dir * T.walk - P.walkV) * Math.min(1, dt * 12);
+    P.ang += clamp(P.walkV / rr, -5, 5) * dt;
+    const ux = Math.cos(P.ang), uy = Math.sin(P.ang);
+    P.x = b.x + rr * ux; P.y = b.y + rr * uy;
+    P.vx = b.vx - uy * P.walkV; P.vy = b.vy + ux * P.walkV;
+    if (job && job.state === 'wait' && b === job.from && Math.abs(angDiff(P.ang, job.ang)) * rr < 16) {
+      job.state = 'carry'; job.t0 = simT; job.style = 0;
+      logEv('pickup', { at: b.name, wait: +(simT - job.tNew).toFixed(1) });
+      popup(P.x, P.y, 'Got it! → ' + job.to.name, '#ffd28a');
+    }
+    gravAt(P.x, P.y, G0);
+    return;
+  }
+
+  // free flight: real summed gravity, semi-implicit Euler (symplectic, no orbital drift)
+  gravAt(P.x, P.y, G0);
+  let ax = G0.ax, ay = G0.ay;
+  // ANCHOR: steady tether toward one chosen world. Ramps in, bleeds off sideways/away drift.
+  if (!P.anchorLock) P.anchor = chooseAnchor();
+  else if (P.anchor && (!bodies.includes(P.anchor) || Math.hypot(P.anchor.x - P.x, P.anchor.y - P.y) - P.anchor.r > T.anchorRange * 1.5)) {
+    popup(P.x, P.y, 'anchor slipped', '#ff9c9c'); logEv('anchor_slip', { from: bname(P.anchor) }); P.anchor = null;
+  }
+  P.reach = null;
+  if (keys.heavy && P.anchor && !inCorona()) {
+    const nb = P.anchor; P.reach = nb;
+    P.reachT = Math.min(1, P.reachT + dt / T.anchorRamp);
+    const dx = nb.x - P.x, dy = nb.y - P.y, d = Math.hypot(dx, dy) || 1, nx = dx / d, ny = dy / d;
+    ax += T.anchorAccel * P.reachT * nx; ay += T.anchorAccel * P.reachT * ny;
+    const rx = P.vx - nb.vx, ry = P.vy - nb.vy;
+    const vt = -rx * ny + ry * nx;            // sideways (tangent t = (-ny, nx))
+    const vr = rx * nx + ry * ny;             // >0 approaching, <0 moving away
+    const k = Math.min(1, T.anchorDamp * P.reachT * dt);
+    P.vx -= -ny * vt * k; P.vy -= nx * vt * k;
+    if (vr < 0) { P.vx -= nx * vr * k; P.vy -= ny * vr * k; }
+  } else P.reachT = 0;
+  P.vx += ax * dt; P.vy += ay * dt;
+  P.x += P.vx * dt; P.y += P.vy * dt;
+  if (P.kicks < T.kickMax && (P.kickT += dt) >= T.kickRecharge) { P.kicks++; P.kickT = 0; }
+  if (LOG.flight) { LOG.flight.maxSun = Math.max(LOG.flight.maxSun, Math.hypot(P.x, P.y)); if (keys.heavy) LOG.flight.heavy += dt; }
+
+  for (const b of bodies) {
+    if (b.ghost) continue;
+    const dx = P.x - b.x, dy = P.y - b.y, d = Math.hypot(dx, dy);
+    const h = d - b.r - T.playerR;
+    if (h < 0 && (b === hub || b.gas)) {   // suns and gas giants can't be stood on: elastic bounce in their frame
+      const nx = dx / d, ny = dy / d, vn = (P.vx - b.vx) * nx + (P.vy - b.vy) * ny;
+      if (vn < 0) { P.vx -= 2 * vn * nx; P.vy -= 2 * vn * ny; }
+      const spit = b === hub ? T.sunSpit : 40;
+      P.vx += nx * spit; P.vy += ny * spit;   // spat out a little harder than you hit
+      P.x = b.x + nx * (b.r + T.playerR); P.y = b.y + ny * (b.r + T.playerR);
+      if (b === hub) { P.kicks = T.kickMax; P.kickT = 0; }   // a solar bounce refreshes your kicks
+      burst(P.x, P.y, b === hub ? '#ffcf6b' : b.color, 24, 260); popup(P.x, P.y, b === hub ? 'solar bounce!' : 'cloud-top bounce!', b === hub ? '#ffcf6b' : '#ffd9a0');
+      if (simT - (P.lastBounce || -9) > 0.5) logEv(b === hub ? 'sun_bounce' : 'gas_bounce', { body: bname(b), speed: Math.hypot(P.vx, P.vy) | 0 });
+      P.lastBounce = simT;
+      continue;
+    }
+    if (h < 0) { land(b); return; }
+    // graze: skim a surface at speed and escape again
+    const rel = Math.hypot(P.vx - b.vx, P.vy - b.vy);
+    if (h < T.grazeAlt && rel > T.grazeSpeed) P.grazes.add(b);
+    else if (h > 90 && P.grazes.has(b)) { P.grazes.delete(b); addStyle(5, 'graze ✦', '#ffe08a'); }
+  }
+
+  trackFlyby();
+
+  // full orbit around whatever is pulling hardest
+  const d = G0.dom, a = Math.atan2(P.y - d.y, P.x - d.x);
+  if (d === hub) P.orbBody = null;            // circling the sun is drifting, not style
+  else if (P.orbBody !== d) { P.orbBody = d; P.orbAng = a; P.orbSwept = 0; }
+  else {
+    P.orbSwept += angDiff(a, P.orbAng); P.orbAng = a;
+    if (Math.abs(P.orbSwept) >= TAU) { P.orbSwept -= Math.sign(P.orbSwept) * TAU; addStyle(12, 'full orbit of ' + (d.name || 'a seed'), '#9ad8ff'); }
+  }
+
+  if (Math.hypot(P.x, P.y) > T.lostDist) respawn('lost in the void…');
+}
+
+// ---------------- slingshots ----------------
+// A "pass" starts when you come within a world's pass radius and ends when you leave it.
+// We measure how much your orbital energy around the sun changed (planets are the only thing that can change it,
+// besides your own kicks), and express it as the equivalent burn at your current speed: "+40" ≈ a free 40 px/s kick.
+const passR = b => b.r * 4 + 80;
+function trackFlyby() {
+  const E = helioE();
+  if (P.skipBody && (!bodies.includes(P.skipBody) || Math.hypot(P.x - P.skipBody.x, P.y - P.skipBody.y) - P.skipBody.r > passR(P.skipBody))) P.skipBody = null;
+  if (!P.pass) {
+    for (const b of bodies) {
+      if (b.ghost || b === hub || b.seed || b === P.skipBody) continue;
+      if (Math.hypot(P.x - b.x, P.y - b.y) - b.r < passR(b)) { P.pass = { b, E0: E, t0: simT, minAlt: Infinity }; break; }
+    }
+    return;
+  }
+  const b = P.pass.b;
+  if (!bodies.includes(b)) { P.pass = null; return; }
+  const alt = Math.hypot(P.x - b.x, P.y - b.y) - b.r;
+  P.pass.minAlt = Math.min(P.pass.minAlt, alt);
+  if (alt <= passR(b) * 1.15) return;
+  const v = Math.hypot(P.vx, P.vy) || 1, dv = (E - P.pass.E0) / v;
+  if (Math.abs(dv) >= T.slingMin) {
+    if (dv > 0) P.chain++; else P.chain = 0;
+    if (dv > 0 && job && job.state === 'carry') job.slings = (job.slings || 0) + 1;
+    toast(dv > 0 ? `Slingshot! ${bname(b)} +${dv | 0}${P.chain > 1 ? '  ×' + P.chain : ''}` : `Braked by ${bname(b)} ${dv | 0}`, dv > 0 ? 'gain' : 'lose');
+    const mult = 1 + 0.5 * Math.max(0, P.chain - 1);
+    const pts = Math.round(Math.abs(dv) / 4 * mult);
+    if (dv > 0) addStyle(pts, `Slingshot! ${bname(b)} +${dv | 0}${P.chain > 1 ? ' · chain ×' + P.chain : ''}`, '#ffb36b');
+    else addStyle(pts, `Braked by ${bname(b)} ${dv | 0}`, '#6bc8ff');
+    logEv('flyby', { body: bname(b), dv: dv | 0, minAlt: P.pass.minAlt | 0, dur: +(simT - P.pass.t0).toFixed(1), chain: P.chain, level });
+    if (LOG.flight) LOG.flight.flybys = (LOG.flight.flybys || 0) + 1;
+  }
+  P.pass = null;
+}
+
+// ---------------- same-orbit chase (phasing) ----------------
+// On a shared orbit you can't "speed up" to catch something: a prograde kick raises your orbit, which is SLOWER.
+// To catch a world ahead, slow down (drop lower, lap faster); to let one behind catch you, speed up (rise, lap slower).
+function phaseInfo(tgt, osc) {
+  if (!tgt || P.on || !osc || !isFinite(osc.Ap) || refBody() !== hub) return null;
+  const tb = tgt.parent === hub ? tgt : (tgt.parent && tgt.parent.parent === hub ? tgt.parent : null);   // moons & binaries: chase the parent
+  if (!tb) return null;
+  const R = tb.R; if (R < osc.Pe - 80 || R > osc.Ap + 80) return null;   // only when you share its orbit
+  const dir = Math.sign(osc.h) || 1; if (dir !== Math.sign(tb.w)) return null;
+  const th = angDiff(Math.atan2(tb.y - hub.y, tb.x - hub.x), Math.atan2(P.y - hub.y, P.x - hub.x)) * dir;   // + = target ahead
+  const Tt = TAU / Math.abs(tb.w), Ty = Tt * Math.pow(((osc.Ap + osc.Pe) / 2) / R, 1.5);
+  const gain = TAU / Ty - TAU / Tt;   // rad/s you gain on it
+  const catchAng = (T.anchorRange + tgt.r) / R, need = Math.max(0, Math.abs(th) - catchAng);
+  const eta = need === 0 ? 0 : (Math.sign(gain) === Math.sign(th) && gain !== 0 ? need / Math.abs(gain) : Infinity);
+  return { tb, th, deg: Math.abs(th) * 180 / Math.PI, ahead: th > 0, Ty, Tt, eta, lapGainDeg: Math.abs(gain) * Ty * 180 / Math.PI, closing: eta < Infinity };
+}
+
+// ---------------- orbit forecast ----------------
+// Every world rides a fixed rail, so the future field is known exactly. We integrate YOUR path forward with the
+// same physics (adaptive step), live every frame — kicks, anchor pull and jump charge show up immediately.
+let forecastOn = true;
+const FC = { main: null, kick: null, osc: null, frame: 0 };
+const FC_S = [];
+function forecast(x, y, vx, vy, horizon, useAnchor, skip) {
+  const n = bodies.length, pidx = bodies.map(b => b.parent ? bodies.indexOf(b.parent) : -1);
+  const anc = useAnchor ? bodies.indexOf(P.anchor) : -1, skipI0 = skip ? bodies.indexOf(skip) : -1;
+  let skipI = skipI0, t = 0, steps = 0, nextPt = 0.1, pass = null, end = null;
+  const tb0 = currentTarget(), tb = tb0 && tb0 !== skip ? tb0 : null, tI = tb ? bodies.indexOf(tb) : -1;
+  let ca = null;   // closest approach to the target
+  let exit = skip ? null : { x, y, vx, vy, t: 0 };   // state once you've climbed out of the launch world's pull
+  const pts = [[x, y, 0]], enc = [];
+  const energy = () => (vx * vx + vy * vy) / 2 + phiSun(Math.hypot(x - hub.x, y - hub.y));
+  let minAltPrev = 0;
+  let dt = T.step;   // same fixed step + same ordering as the game, so the forecast is exact (barring your inputs)
+  while (t < horizon && steps++ < 30000) {
+    if (horizon > 60 && t > 15) dt = T.step * (t > 45 && minAltPrev > 300 ? 4 : 2);   // long chase previews: exact for 15 s, coarser beyond (finer near worlds)
+    else if (t > 45) dt = T.step * 2;
+    const tt = simT + t + dt;
+    for (let i = 0; i < n; i++) {
+      const b = bodies[i], st = FC_S[i] || (FC_S[i] = [0, 0, 0, 0]);
+      if (pidx[i] < 0) { st[0] = b.x; st[1] = b.y; st[2] = b.vx; st[3] = b.vy; continue; }
+      const pp = FC_S[pidx[i]], th = b.phase + b.w * tt, c = Math.cos(th), sn = Math.sin(th);
+      st[0] = pp[0] + b.R * c; st[1] = pp[1] + b.R * sn; st[2] = pp[2] - b.R * b.w * sn; st[3] = pp[3] + b.R * b.w * c;
+    }
+    let ax = 0, ay = 0, minAlt = Infinity;
+    for (let i = 0; i < n; i++) {
+      const b = bodies[i]; if (b.ghost) continue;
+      const st = FC_S[i], dx = st[0] - x, dy = st[1] - y, d = Math.hypot(dx, dy) || 1e-6;
+      if (b.M > 0) { const g = pull(b, d); ax += g * dx / d; ay += g * dy / d; }
+      minAlt = Math.min(minAlt, d - b.r - T.playerR);
+    }
+    minAltPrev = minAlt;
+    let damp = null;
+    if (anc >= 0 && Math.hypot(x - hub.x, y - hub.y) >= T.coronaR) {
+      const st = FC_S[anc], dx = st[0] - x, dy = st[1] - y, d = Math.hypot(dx, dy) || 1, nx = dx / d, ny = dy / d;
+      ax += T.anchorAccel * nx; ay += T.anchorAccel * ny; damp = [st, nx, ny];
+    }
+    vx += ax * dt; vy += ay * dt;
+    if (damp) {
+      const [st, nx, ny] = damp, rx = vx - st[2], ry = vy - st[3], vt = -rx * ny + ry * nx, vr = rx * nx + ry * ny, k = Math.min(1, T.anchorDamp * dt);
+      vx -= -ny * vt * k; vy -= nx * vt * k; if (vr < 0) { vx -= nx * vr * k; vy -= ny * vr * k; }
+    }
+    x += vx * dt; y += vy * dt; t += dt;
+    for (let i = 0; i < n; i++) {
+      const b = bodies[i]; if (b.ghost) continue;
+      const st = FC_S[i], dx = x - st[0], dy = y - st[1], d = Math.hypot(dx, dy) || 1e-6, alt = d - b.r - T.playerR;
+      if (alt < 0) {
+        if (b === hub || b.gas) {
+          const nx = dx / d, ny = dy / d, vn = (vx - st[2]) * nx + (vy - st[3]) * ny, spit = b === hub ? T.sunSpit : 40;
+          if (vn < 0) { vx -= 2 * vn * nx; vy -= 2 * vn * ny; }
+          vx += nx * spit; vy += ny * spit; x = st[0] + nx * (b.r + T.playerR); y = st[1] + ny * (b.r + T.playerR);
+          enc.push({ type: 'bounce', b, x, y, t });
+        } else if (i !== skipI || t > 0.3) { end = { type: 'land', b, x, y, t }; break; }
+      }
+      if (i === tI && i !== skipI && (!ca || alt < ca.d)) ca = { d: Math.max(0, alt), t, x, y, bx: st[0], by: st[1], b };
+      // slingshot passes
+      if (i === skipI) { if (alt + T.playerR > passR(b)) { skipI = -1; exit = { x, y, vx, vy, t }; } continue; }
+      if (b === hub || b.seed) continue;
+      const inside = alt + T.playerR < passR(b);
+      if (!pass && inside) pass = { i, b, E0: energy(), minAlt: alt, at: [x, y, st[0], st[1], t] };
+      else if (pass && pass.i === i) {
+        if (alt < pass.minAlt) { pass.minAlt = alt; pass.at = [x, y, st[0], st[1], t]; }
+        if (alt + T.playerR > passR(b) * 1.15) {
+          const dv = (energy() - pass.E0) / (Math.hypot(vx, vy) || 1);
+          enc.push({ type: 'pass', b, dv, x: pass.at[0], y: pass.at[1], bx: pass.at[2], by: pass.at[3], t: pass.at[4] });
+          pass = null;
+        }
+      }
+    }
+    if (end) break;
+    if (t >= nextPt) { pts.push([x, y, t]); nextPt += 0.1; }
+  }
+  if (pass) enc.push({ type: 'pass', b: pass.b, dv: (energy() - pass.E0) / (Math.hypot(vx, vy) || 1), x: pass.at[0], y: pass.at[1], bx: pass.at[2], by: pass.at[3], t: pass.at[4], open: true });
+  pts.push([x, y, t]);
+  if (end && end.b === tb) ca = { d: 0, t: end.t, x: end.x, y: end.y, bx: end.x, by: end.y, b: tb };
+  return { pts, enc, end, H: horizon, ca, exit, steps };
+}
+function updateForecast() {
+  FC.frame++;
+  if (!forecastOn || paused) { FC.main = FC.kick = FC.osc = null; return; }
+  if (P.on) {
+    if (!P.charging) { FC.main = FC.kick = FC.osc = null; return; }
+    const b = P.on, a = P.ang, sJ = lerp(T.jumpMin, T.jumpMax, P.charge), ux = Math.cos(a), uy = Math.sin(a);
+    const lvx = b.vx + ux * sJ - uy * P.walkV, lvy = b.vy + uy * sJ + ux * P.walkV;
+    FC.main = forecast(P.x + ux * 1.5, P.y + uy * 1.5, lvx, lvy, T.forecastH, false, b);
+    const ex = FC.main.exit;   // orbit you'll actually have after climbing out of this world's gravity
+    FC.osc = ex ? oscOrbit(ex.x, ex.y, ex.vx, ex.vy) : null;
+    FC.kick = null; return;
+  }
+  // alternate frames (each path refreshes at ~30 Hz) to keep the frame budget comfortable
+  const anchorOn = keys.heavy && P.anchor && !inCorona();
+  FC.osc = oscOrbit();
+  // chasing a world on your own orbit? stretch the horizon so a whole lap (and the meeting) fits
+  const ph = phaseInfo(currentTarget(), FC.osc);
+  FC.phase = ph;
+  const H = ph ? clamp(1.25 * Math.max(ph.Ty, ph.Tt), T.forecastH, 130) : T.forecastH;
+  FC.kickPow = P.kickCharging ? P.kickCharge : 1;
+  if (P.kicks <= 0) FC.kick = null;
+  if (H > 60 && FC.frame % 2 === 1 && FC.main) return;   // long previews: each path refreshes ~15 Hz
+  const which = H > 60 ? (FC.frame >> 1) % 2 : FC.frame % 2;
+  if (which === 0 || P.kicks <= 0 || !FC.main) FC.main = forecast(P.x, P.y, P.vx, P.vy, H, anchorOn, null);
+  else {
+    const k = kickDir();
+    FC.kick = k ? forecast(P.x, P.y, P.vx + k[0] * T.kick * FC.kickPow, P.vy + k[1] * T.kick * FC.kickPow, H, anchorOn, null) : null;
+  }
+}
+const systemR = () => { let m = 0; for (const b of bodies) if (!b.ghost) m = Math.max(m, Math.hypot(b.x - hub.x, b.y - hub.y) + b.r); return m; };
+
+// ---------------- warp ----------------
+// Hold F: time ramps up to ×8 — and brakes on its own so the next slingshot / arrival / landing is ≥2.5 s away in real time.
+let warp = 1, braked = false;
+function nextEvent() {
+  const fc = FC.main; if (!fc || P.on) return null;
+  // an event brakes warp until its moment has passed (lead = how early to be back at ×1)
+  let best = null; const add = (moment, lead, label) => { if (moment < 0.2) return; const t = Math.max(0, moment - lead); if (!best || t < best.t) best = { t, label }; };
+  if (fc.end) add(fc.end.t, 0.5, (fc.end.b === currentTarget() ? 'Arrival: ' : 'Landing: ') + bname(fc.end.b));
+  for (const e of fc.enc) {
+    if (e.type === 'bounce') add(e.t, 1, 'Bounce: ' + bname(e.b));
+    else if (Math.abs(e.dv) >= T.slingMin) add(e.t, 1.5, (e.dv > 0 ? 'Slingshot: ' : 'Brake pass: ') + bname(e.b) + ` ${e.dv > 0 ? '+' : ''}${e.dv | 0}`);
+  }
+  if (fc.ca && fc.ca.d <= T.anchorRange) add(fc.ca.t, 3, 'Catch window: ' + bname(fc.ca.b));
+  return best;
+}
+
+// ---------------- camera ----------------
+const cam = { x: 0, y: 0, zoom: 1, rot: 0, spin: true, bias: 1, overview: false, frame: true, rip: 0, shake: 0 };
+function updateCamera(dt) {
+  let tx = P.x + P.vx * 0.2, ty = P.y + P.vy * 0.2;
+  // framing: in flight, keep you AND your target on screen (you stay nearer the centre)
+  const ft = cam.frame && !P.on && !cam.overview ? currentTarget() : null;
+  let frameZ = Infinity;
+  if (ft) {
+    const fx = (FC.main && FC.main.ca) ? FC.main.ca.bx : ft.x, fy = (FC.main && FC.main.ca) ? FC.main.ca.by : ft.y;
+    tx = lerp(tx, fx, 0.32); ty = lerp(ty, fy, 0.32);
+    frameZ = Math.min(W, H) / (2 * (Math.hypot(fx - P.x, fy - P.y) * 0.75 + 260));
+  }
+  if (cam.overview) { tx = hub.x; ty = hub.y; }
+  // RIP CAM: while warping through a coast, swoop in behind the ship — it flies "up" the screen
+  const ripT = warp > 1.6 && !P.on && !cam.overview ? 1 : 0;
+  cam.rip += (ripT - cam.rip) * (1 - Math.exp(-dt * (ripT ? 2.2 : 4.5)));
+  const vs = Math.hypot(P.vx, P.vy) || 1, vhx = P.vx / vs, vhy = P.vy / vs;
+  const k = 1 - Math.exp(-dt * (cam.overview ? 3 : 5));
+  cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
+  if (cam.rip > 0.001) {   // lock on (no lag at ×8), ship sits low on screen looking ahead
+    const lead = 0.2 * H / T.ripZoom;
+    cam.x = lerp(cam.x, P.x + vhx * lead, cam.rip); cam.y = lerp(cam.y, P.y + vhy * lead, cam.rip);
+  }
+  const d = G0.dom, sp = Math.hypot(P.vx - d.vx, P.vy - d.vy);
+  const alt = Math.hypot(P.x - d.x, P.y - d.y) - d.r;
+  const far = P.on ? 1 : 0.85 * clamp(450 / (alt + 1), 0.4, 1);   // pull back on long swoops
+  let tz = clamp(1.15 - sp / 800, 0.4, 1.15) * far * cam.bias * T.camScale;
+  if (ft) tz = Math.max(0.05, Math.min(tz, frameZ));
+  if (cam.overview) tz = Math.min(W, H) / (2.15 * systemR());
+  tz = lerp(tz, T.ripZoom * Math.sqrt(cam.bias), cam.rip);
+  cam.zoom += (tz - cam.zoom) * (1 - Math.exp(-dt * (cam.rip > 0.05 ? 3 : 2)));
+  // up = away from the world you're standing on or anchored to; with no anchor the camera holds still
+  let target = cam.rot;
+  if (P.on) target = P.ang + Math.PI / 2;
+  else if (P.anchor) target = Math.atan2(P.y - P.anchor.y, P.x - P.anchor.x) + Math.PI / 2;
+  if (cam.rip > 0.4) target = Math.atan2(vhy, vhx) + Math.PI / 2;   // velocity points up
+  if (!cam.spin || cam.overview) target = 0;
+  cam.rot += angDiff(target, cam.rot) * (1 - Math.exp(-dt * (P.on ? 5 : cam.rip > 0.4 ? 3 : 1.5)));
+}
+function w2s(x, y) {
+  const dx = (x - cam.x) * cam.zoom, dy = (y - cam.y) * cam.zoom, c = Math.cos(-cam.rot), s = Math.sin(-cam.rot);
+  return [W / 2 + dx * c - dy * s, H / 2 + dx * s + dy * c];
+}
+function s2w(sx, sy) {
+  const dx = (sx - W / 2) / cam.zoom, dy = (sy - H / 2) / cam.zoom, c = Math.cos(cam.rot), s = Math.sin(cam.rot);
+  return [cam.x + dx * c - dy * s, cam.y + dx * s + dy * c];
+}
+
+// ---------------- input ----------------
+const keys = { left: false, right: false, up: false, down: false, w: false, a: false, s: false, d: false, heavy: false, ff: false };
+let minimapOn = true;
+const KEYMAP = { ArrowLeft: 'left', KeyA: 'a', ArrowRight: 'right', KeyD: 'd', ArrowUp: 'up', KeyW: 'w', ArrowDown: 'down', KeyS: 's', ShiftLeft: 'heavy', ShiftRight: 'heavy', KeyF: 'ff' };
+addEventListener('keydown', e => {
+  if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = true;
+  if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Tab', 'Backspace'].includes(e.code)) e.preventDefault();
+  if (e.repeat) return;
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') anchorPress();
+  if (e.code === 'KeyQ' || e.code === 'Tab') cycleAnchor();
+  pendingInputTs.push(e.timeStamp);
+  logEv('key', { k: e.code, on: P.on ? bname(P.on) : null });
+  if (!P.on && LOG.flight) {
+    if (['left', 'right', 'up', 'down'].includes(KEYMAP[e.code])) LOG.flight.airSteer++;
+    if (e.code === 'Space' && P.kicks <= 0) LOG.flight.extraSpace++;
+  }
+  if (e.code === 'Space' && !panelOpen()) {
+    if (P.on) { P.charging = true; P.charge = 0; }
+    else if (P.kicks > 0) { P.kickCharging = true; P.kickCharge = T.kickMinPow; }   // hold to build power, release to fire
+  }
+  if (e.code === 'KeyL') downloadLog();
+  // Esc / Backspace: cancel a jump or kick you're charging (nothing is spent)
+  if ((e.code === 'Escape' || e.code === 'Backspace') && !panelOpen() && (P.charging || P.kickCharging)) {
+    const what = P.charging ? 'jump' : 'kick', pow = P.charging ? P.charge : P.kickCharge;
+    P.charging = false; P.charge = 0; P.fullHold = 0; P.kickCharging = false;
+    popup(P.x, P.y, what + ' cancelled', '#cfe3ff'); logEv('cancel', { what, pow: +pow.toFixed(2) });
+    e.preventDefault(); return;
+  }
+  if (guideIdx !== null && panelOpen()) {
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') showGuide(guideIdx + 1);
+    else if (e.code === 'ArrowLeft' || e.code === 'KeyA') showGuide(guideIdx - 1);
+    else if (e.code === 'Enter') { if (guideIdx < GUIDE.length - 1) showGuide(guideIdx + 1); else hidePanel(); }
+    else if (e.code === 'Escape' || e.code === 'KeyB') hidePanel();
+    return;
+  }
+  if (e.code === 'KeyB' && !panelOpen()) { showGuide(0); return; }
+  if (e.code === 'Enter' && panelOpen()) { const act = panelAction; hidePanel(); if (act) act(); }
+  if (e.code === 'Escape' && panelOpen()) hidePanel();
+  if (e.code === 'KeyG' && LEVELS[level].assistT) {
+    assist = !assist; applyTuning(level); logEv('assist', { on: assist });
+    popup(P.x, P.y, assist ? 'Assist ON — long-range anchor' : 'Assist OFF — landing gear', '#9ad8ff');
+  }
+  if (e.code === 'KeyC') { cam.spin = !cam.spin; logEv('cam_spin', { on: cam.spin }); }
+  if (e.code === 'KeyP') { forecastOn = !forecastOn; logEv('forecast', { on: forecastOn }); popup(P.x, P.y, 'forecast ' + (forecastOn ? 'on' : 'off'), '#cfe3ff'); }
+  if (e.code === 'KeyZ') { cam.overview = !cam.overview; logEv('overview', { on: cam.overview }); }
+  if (e.code === 'KeyM') { minimapOn = !minimapOn; logEv('minimap', { on: minimapOn }); }
+  if (e.code === 'KeyX') respawn('respawned');
+  if (e.code === 'KeyH') keysFull = !keysFull;
+  if (e.code === 'KeyT' && !panelOpen()) { const names = Object.keys(THEMES); setTheme(names[(names.indexOf(themeName) + 1) % names.length]); toast('Theme: ' + TH.name); logEv('theme', { name: themeName }); }
+  if (e.code === 'KeyV' && !panelOpen()) { cam.frame = !cam.frame; toast(cam.frame ? 'Camera frames you + target' : 'Camera follows you'); }
+});
+addEventListener('keyup', e => {
+  if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false;
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') P.anchorLock = keys.heavy;
+  if (!e.repeat) logEv('keyup', { k: e.code, on: P.on ? bname(P.on) : null });
+  if (e.code === 'Space' && P.on && P.charging) jump();
+  if (e.code === 'Space' && P.kickCharging) { P.kickCharging = false; if (!P.on) kick(P.kickCharge); }
+});
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => {
+  const [x, y] = s2w(e.clientX, e.clientY);
+  if (e.button === 2) {
+    let best = null, bd = Infinity;
+    for (const b of bodies) if (b.seed) { const d = Math.hypot(b.x - x, b.y - y) - b.r; if (d < bd) { bd = d; best = b; } }
+    if (best && bd < 25 / cam.zoom) removeSeed(best, 'seed dug up');
+  } else if (e.button === 0) {
+    if (seeds <= 0) { popup(x, y, 'no seeds — deliver more parcels', '#ff9c9c'); logEv('seed_none'); }
+    else planting = { x, y, t: 0 };
+  }
+});
+addEventListener('mouseup', e => {
+  if (e.button !== 0 || !planting) return;
+  const r = lerp(T.seedMinR, T.seedMaxR, Math.min(1, planting.t / T.seedHold));
+  if (seedOk(planting.x, planting.y, r)) plantSeed(planting.x, planting.y, r);
+  else { const why = seedProblem(planting.x, planting.y, r); popup(planting.x, planting.y, "can't plant: " + why, '#ff9c9c'); logEv('seed_fail', { r: +r.toFixed(1), why }); }
+  planting = null;
+});
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.bias = clamp(cam.bias * Math.exp(-e.deltaY * 0.001), 0.12, 2.5); LOG.meta.lastZoomBias = +cam.bias.toFixed(2); }, { passive: false });
+
+// ---------------- themes ----------------
+const THEMES = {
+  nebula:    { name: 'Nebula', bg: '#04050b', nebula: [[0.22, 0.28, 0.6, '96,50,160'], [0.82, 0.72, 0.55, '20,86,140'], [0.62, 0.12, 0.38, '150,60,80']],
+               stars: ['#cfe3ff', '#ffffff', '#ffe2c4', '#c4d4ff', '#ffd0e0'], rail: '170,200,255', grid: 0.035, gridCol: '150,180,255',
+               fc: '235,245,255', accent: '#ffd28a', accent2: '#7fc8ff', good: '#9dffb5', warn: '#ffb36b', dust: '200,190,170' },
+  blueprint: { name: 'Blueprint', bg: '#071a36', nebula: [[0.5, 0.5, 0.95, '30,100,190']], stars: ['#bfe6ff', '#ffffff'],
+               rail: '170,225,255', grid: 0.15, gridCol: '140,205,255', fc: '255,255,255', accent: '#ffffff', accent2: '#7fe6ff',
+               good: '#b4ffcf', warn: '#ffd27a', dust: '160,220,255', labels: true },
+  amber:     { name: 'Amber CRT', bg: '#0c0703', nebula: [[0.3, 0.4, 0.7, '130,64,10'], [0.8, 0.8, 0.5, '100,44,10']], stars: ['#ffcf8a', '#ffe2b0'],
+               rail: '255,180,90', grid: 0.06, gridCol: '255,170,60', fc: '255,220,160', accent: '#ffb347', accent2: '#ffd27a',
+               good: '#d6ff9a', warn: '#ff9a4a', dust: '255,190,120', scan: true },
+};
+let themeName = 'nebula';
+try { const t = localStorage.getItem('oc-theme'); if (t && THEMES[t]) themeName = t; } catch (e) {}
+let TH = THEMES[themeName];
+function setTheme(name) {
+  themeName = name; TH = THEMES[name]; document.body.dataset.theme = name;
+  try { localStorage.setItem('oc-theme', name); } catch (e) {}
+}
+
+// ---------------- procedural planet textures ----------------
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const mixC = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const scaleC = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+function hash2(x, y, sd) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(sd | 0, 982451653)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, sd) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy, sd), b = hash2(ix + 1, iy, sd), c = hash2(ix, iy + 1, sd), d = hash2(ix + 1, iy + 1, sd);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, sd, oct = 4) { let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < oct; i++) { s += a * vnoise(x * f, y * f, sd + i * 17); n += a; a *= 0.5; f *= 2.03; } return s / n; }
+const TEXKIND = { Hearth: 'sun', Cinder: 'sun', Kettle: 'terra', Dock: 'terra', Pip: 'moon', Wisp: 'moon', Brindle: 'jungle', Ferry: 'jungle',
+  Bellows: 'gas', Anvil: 'gas', Ada: 'ice', Bo: 'ice', Tern: 'ice', Outpost: 'desert', Lantern: 'desert' };
+function makeTexture(b) {
+  const kind = b.seed ? 'moss' : TEXKIND[b.name] || 'moon', N = kind === 'sun' ? 160 : 128;
+  const cv2 = document.createElement('canvas'); cv2.width = N; cv2.height = N;
+  const c2 = cv2.getContext('2d'), img = c2.createImageData(N, N), D = img.data;
+  const base = hexRgb(b.color), sd = [...(b.name || 'rock' + b.R)].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7) & 0xffff;
+  const craters = kind === 'moon' ? Array.from({ length: 16 }, (_, i) => [hash2(i, 1, sd) * 2 - 1, hash2(i, 2, sd) * 2 - 1, 0.05 + hash2(i, 3, sd) * 0.2]) : [];
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const u = i / N * 2 - 1, v = j / N * 2 - 1; let c;
+    if (kind === 'terra') {
+      const n = fbm(u * 2.4 + 5, v * 2.4, sd, 5);
+      c = n > 0.53 ? mixC([70, 120, 60], [170, 150, 100], (n - 0.53) * 4) : mixC([16, 50, 100], scaleC(base, 0.8), Math.max(0, n - 0.25) * 2.2);
+      if (Math.abs(v) + (fbm(u * 6, v * 6, sd + 3) - 0.5) * 0.2 > 0.8) c = [235, 242, 250];
+    } else if (kind === 'jungle') {
+      const n = fbm(u * 3, v * 3, sd, 5), r = Math.abs(fbm(u * 5, v * 5, sd + 9) - 0.5);
+      c = mixC(scaleC(base, 0.55), scaleC(base, 1.15), n); if (r < 0.025) c = [60, 110, 140];
+    } else if (kind === 'desert') {
+      const n = fbm(u * 2, v * 2, sd), dune = Math.sin((u * 0.6 + v + n * 0.8) * 22) * 0.06;
+      c = mixC(scaleC(base, 0.7), scaleC(base, 1.1), n + dune);
+    } else if (kind === 'ice') {
+      const n = fbm(u * 3, v * 3, sd), ridge = Math.pow(1 - Math.abs(fbm(u * 4, v * 4, sd + 5) * 2 - 1), 10);
+      c = mixC(mixC([225, 238, 252], base, 0.35), [255, 255, 255], n * 0.6); c = mixC(c, scaleC(base, 0.6), ridge * 0.8);
+    } else if (kind === 'gas') {
+      const t = v * 7.5 + (fbm(u * 1.6, v * 5, sd, 4) - 0.5) * 3, sh = 0.5 + 0.5 * Math.sin(t * 2.2);
+      c = mixC(scaleC(base, 0.6), mixC(base, [255, 240, 220], 0.45), sh);
+      const sx = (u - 0.25) / 0.22, sy = (v - 0.3) / 0.11; if (sx * sx + sy * sy < 1) c = mixC(c, [200, 90, 60], 0.6 * (1 - sx * sx - sy * sy));
+    } else if (kind === 'sun') {
+      const n = fbm(u * 16, v * 16, sd, 3), cells = Math.pow(1 - Math.abs(vnoise(u * 26, v * 26, sd + 4) * 2 - 1), 3);
+      c = mixC([255, 104, 26], [255, 236, 170], clamp(n * 1.25 - 0.15 + cells * 0.25, 0, 1));
+    } else if (kind === 'moss') {
+      const n = fbm(u * 4, v * 4, sd); c = mixC([40, 120, 70], [140, 255, 170], n);
+    } else {
+      const n = fbm(u * 3, v * 3, sd); c = mixC(scaleC(base, 0.6), scaleC(base, 1.15), n);
+      for (const [cx, cy, cr] of craters) { const d = Math.hypot(u - cx, v - cy) / cr; if (d < 1) c = scaleC(c, d > 0.8 ? 1.18 : 0.78 + 0.1 * d); }
+    }
+    const k = (j * N + i) * 4; D[k] = c[0]; D[k + 1] = c[1]; D[k + 2] = c[2]; D[k + 3] = 255;
+  }
+  c2.putImageData(img, 0, 0);
+  return cv2;
+}
+function drawTextured(b, rot) {
+  if (!b.texC) { b.texC = makeTexture(b); b.spin = (hash2(b.r | 0, b.R | 0, 3) - 0.5) * 0.12; }
+  ctx.save(); ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.clip();
+  ctx.translate(b.x, b.y); ctx.rotate(rot + simT * b.spin); ctx.drawImage(b.texC, -b.r, -b.r, 2 * b.r, 2 * b.r);
+  ctx.restore();
+}
+
+// decorative dust belts (visual only — no physics)
+let DUST = [];
+function buildDust() {
+  const d = LEVELS[level].dust; DUST = [];
+  if (!d) return;
+  for (let i = 0; i < d[2]; i++) {
+    const r = d[0] + (d[1] - d[0]) * Math.pow(Math.random(), 0.8) * (0.7 + 0.3 * Math.random());
+    DUST.push({ r, ph: rand(0, TAU), w: Math.sqrt(pull(hub, r) / r), s: rand(1.5, 4.5), a: rand(0.15, 0.5) });
+  }
+}
+const GALAXIES = Array.from({ length: 4 }, () => ({ x: rand(0, 4000), y: rand(0, 4000), r: rand(30, 70), ang: rand(0, TAU), tilt: rand(0.25, 0.6), d: 0.015 }));
+
+// ---------------- rendering ----------------
+const STAR_TINTS = ['#cfe3ff', '#ffffff', '#ffe2c4', '#c4d4ff', '#ffd0e0'];
+const stars = Array.from({ length: 900 }, (_, i) => ({ ci: i, x: rand(0, 4000), y: rand(0, 4000), d: rand(0.02, 0.3), s: rand(0.5, 1.8), a: rand(0.25, 1),
+  c: STAR_TINTS[(Math.random() * STAR_TINTS.length) | 0], tw: rand(0.5, 3), ph: rand(0, TAU) }));
+const NEBULA = [[0.25, 0.3, 0.55, '70,40,120'], [0.8, 0.7, 0.5, '20,70,110'], [0.6, 0.15, 0.35, '120,50,60']];
+const withAlpha = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+const fcLabels = [];
+const SPEEDLINES = Array.from({ length: 110 }, () => ({ x: Math.random(), y: Math.random() * 1.3 - 0.15, l: rand(0.5, 1.6), s: rand(0.5, 1.5), w: rand(0.6, 2.2) }));
+const mod = (a, n) => ((a % n) + n) % n;
+
+function draw() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, W, H);
+  // nebula wash (very slow parallax)
+  for (const [nx, ny, nr, rgb] of TH.nebula) {
+    const cx = W * nx - cam.x * 0.01, cy = H * ny - cam.y * 0.01, rr = Math.max(W, H) * nr;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+    g.addColorStop(0, `rgba(${rgb},0.16)`); g.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+
+  // parallax stars
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-cam.rot);
+  for (const s of stars) {
+    const x = mod(s.x - cam.x * s.d, 4000) - 2000, y = mod(s.y - cam.y * s.d, 4000) - 2000;
+    ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(simT * s.tw + s.ph)); ctx.fillStyle = TH.stars[s.ci % TH.stars.length]; ctx.fillRect(x, y, s.s, s.s);
+  }
+  ctx.globalAlpha = 1;
+  for (const g of GALAXIES) {   // distant galaxies
+    const x = mod(g.x - cam.x * g.d, 4000) - 2000, y = mod(g.y - cam.y * g.d, 4000) - 2000;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(g.ang); ctx.scale(1, g.tilt);
+    const gg = ctx.createRadialGradient(0, 0, 0, 0, 0, g.r);
+    gg.addColorStop(0, `rgba(${TH.rail},0.35)`); gg.addColorStop(0.25, `rgba(${TH.rail},0.10)`); gg.addColorStop(1, `rgba(${TH.rail},0)`);
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(0, 0, g.r, 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+
+  // world space
+  ctx.save();
+  const shk = cam.rip * Math.min(1, warp / T.warpMax) * 1.6;
+  ctx.translate(W / 2 + Math.sin(simT * 61) * shk, H / 2 + Math.cos(simT * 47) * shk);
+  ctx.scale(cam.zoom, cam.zoom); ctx.rotate(-cam.rot); ctx.translate(-cam.x, -cam.y);
+  const px = 1 / cam.zoom;
+
+  // polar grid around the star (theme)
+  const sysR = systemR(), gstep = sysR > 3000 ? 500 : 250;
+  ctx.strokeStyle = `rgba(${TH.gridCol},${TH.grid})`; ctx.lineWidth = px;
+  for (let r = gstep; r < sysR * 1.15; r += gstep) { ctx.beginPath(); ctx.arc(hub.x, hub.y, r, 0, TAU); ctx.stroke(); }
+  for (let a = 0; a < 12; a++) { ctx.beginPath(); ctx.moveTo(hub.x + Math.cos(a * TAU / 12) * hub.r * 2, hub.y + Math.sin(a * TAU / 12) * hub.r * 2);
+    ctx.lineTo(hub.x + Math.cos(a * TAU / 12) * sysR * 1.15, hub.y + Math.sin(a * TAU / 12) * sysR * 1.15); ctx.stroke(); }
+  // dust belts
+  for (const d of DUST) {
+    const a = d.ph + d.w * simT, sz = Math.max(d.s, 1.4 * px);
+    ctx.fillStyle = `rgba(${TH.dust},${d.a})`; ctx.fillRect(hub.x + Math.cos(a) * d.r, hub.y + Math.sin(a) * d.r, sz, sz);
+  }
+  // orbit rails (target's highlighted) + a motion streak behind each world so you can see which side is "behind"
+  const tgt = job && job.state !== 'done' ? (job.state === 'wait' ? job.from : job.to) : null;
+  for (const b of bodies) {
+    if (!b.parent) continue;
+    const isT = b === tgt;
+    ctx.lineWidth = (isT ? 1.6 : 1) * px; ctx.strokeStyle = isT ? withAlpha(TH.accent, 0.35) : `rgba(${TH.rail},0.10)`;
+    ctx.beginPath(); ctx.arc(b.parent.x, b.parent.y, b.R, 0, TAU); ctx.stroke();
+    if (b.ghost) continue;
+    const th = Math.atan2(b.y - b.parent.y, b.x - b.parent.x), dir = Math.sign(b.w) || 1, span = Math.min(0.9, 260 / b.R);
+    for (let i = 0; i < 8; i++) {
+      ctx.strokeStyle = withAlpha(b.color, 0.05 + 0.05 * (8 - i)); ctx.lineWidth = (3 - i * 0.25) * px;
+      ctx.beginPath(); ctx.arc(b.parent.x, b.parent.y, b.R, th - dir * span * (i + 1) / 8, th - dir * span * i / 8, dir < 0); ctx.stroke();
+    }
+  }
+
+  // bodies
+  for (const b of bodies) {
+    if (b.ghost) continue;
+    if (b === hub) {   // the star: additive corona
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (const [k, a] of [[5.5, 0.10], [3, 0.16], [1.7, 0.30]]) {
+        const rr = b.r * k * (1 + 0.03 * Math.sin(simT * 1.7 + k));
+        const g = ctx.createRadialGradient(b.x, b.y, b.r * 0.6, b.x, b.y, rr);
+        g.addColorStop(0, withAlpha(b.color, a)); g.addColorStop(1, withAlpha(b.color, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+      drawTextured(b, 0);
+      const g = ctx.createRadialGradient(b.x, b.y, b.r * 0.2, b.x, b.y, b.r);   // limb darkening + hot core
+      g.addColorStop(0, 'rgba(255,250,230,0.35)'); g.addColorStop(0.7, 'rgba(255,200,120,0)'); g.addColorStop(1, 'rgba(120,30,0,0.45)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+      continue;
+    }
+    // slingshot zone (faint) for real worlds
+    if (b.name) {
+      ctx.strokeStyle = withAlpha(b.color, b.gas ? 0.16 : 0.08); ctx.lineWidth = px; ctx.setLineDash([4 * px, 8 * px]);
+      ctx.beginPath(); ctx.arc(b.x, b.y, passR(b), 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+    const hr = b.r * (b.seed ? 3.2 : 2.2);
+    const halo = ctx.createRadialGradient(b.x, b.y, b.r * 0.9, b.x, b.y, hr);
+    halo.addColorStop(0, withAlpha(b.color, 0.22)); halo.addColorStop(1, withAlpha(b.color, 0));
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(b.x, b.y, hr, 0, TAU); ctx.fill();
+    drawTextured(b, b.gas ? 0.35 : 0);
+    // lit from the star's side
+    const ldx = hub.x - b.x, ldy = hub.y - b.y, ld = Math.hypot(ldx, ldy) || 1, lx = ldx / ld, ly = ldy / ld;
+    const sh = ctx.createRadialGradient(b.x + lx * b.r * 0.45, b.y + ly * b.r * 0.45, b.r * 0.1, b.x, b.y, b.r * 1.05);
+    sh.addColorStop(0, 'rgba(255,255,240,0.28)'); sh.addColorStop(0.55, 'rgba(0,0,0,0.05)'); sh.addColorStop(1, 'rgba(0,0,10,0.62)');
+    ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = withAlpha(b.color, 0.55); ctx.lineWidth = 1.5 * px;   // atmosphere rim
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 1.2 * px, 0, TAU); ctx.stroke();
+  }
+
+  // job target ring
+  if (job && job.state !== 'done') {
+    const tb = job.state === 'wait' ? job.from : job.to;
+    const pulse = 0.5 + 0.5 * Math.sin(simT * 4);
+    ctx.strokeStyle = `rgba(255,210,138,${0.3 + 0.4 * pulse})`; ctx.lineWidth = 2 * px;
+    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 14 + pulse * 6, 0, TAU); ctx.stroke();
+  }
+
+  // planting preview (with the paths moving bodies sweep)
+  if (planting) {
+    for (const b of bodies) {
+      const band = sweptBand(b); if (!band) continue;
+      ctx.strokeStyle = 'rgba(255,120,120,0.07)'; ctx.lineWidth = band[1] - band[0] + 16;
+      ctx.beginPath(); ctx.arc(hub.x, hub.y, (band[0] + band[1]) / 2, 0, TAU); ctx.stroke();
+    }
+    const r = lerp(T.seedMinR, T.seedMaxR, Math.min(1, planting.t / T.seedHold));
+    ctx.strokeStyle = seedOk(planting.x, planting.y, r) ? '#7dffb0' : '#ff9c9c'; ctx.lineWidth = 1.5 * px;
+    ctx.setLineDash([4 * px, 4 * px]); ctx.beginPath(); ctx.arc(planting.x, planting.y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // trail
+  const tr = P.trail;
+  for (let i = 1; i < tr.length; i++) {
+    const a = (i / tr.length) * 0.6, g = tr[i][2];   // warm = gaining orbital energy, cool = losing
+    ctx.strokeStyle = g > 6 ? `rgba(255,179,107,${a + 0.2})` : g < -6 ? `rgba(107,200,255,${a + 0.2})` : `rgba(160,180,210,${a * 0.7})`;
+    ctx.lineWidth = (Math.abs(g) > 6 ? 3 : 2) * px;
+    ctx.beginPath(); ctx.moveTo(tr[i - 1][0], tr[i - 1][1]); ctx.lineTo(tr[i][0], tr[i][1]); ctx.stroke();
+  }
+
+  // forecast
+  fcLabels.length = 0;
+  const drawFC = (fc, kickStyle) => {
+    if (!fc || fc.pts.length < 2) return;
+    if (kickStyle) ctx.setLineDash([7 * px, 7 * px]);
+    for (let i = 1; i < fc.pts.length; i++) {
+      const a = 1 - fc.pts[i][2] / fc.H;
+      ctx.strokeStyle = kickStyle ? withAlpha(TH.accent2, 0.1 + 0.5 * a) : `rgba(${TH.fc},${0.12 + 0.6 * a})`;
+      ctx.lineWidth = (kickStyle ? 1.5 : 2) * px;
+      ctx.beginPath(); ctx.moveTo(fc.pts[i - 1][0], fc.pts[i - 1][1]); ctx.lineTo(fc.pts[i][0], fc.pts[i][1]); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    if (kickStyle) return;
+    for (let i = 1; i < fc.pts.length; i++) if (Math.floor(fc.pts[i][2] / 5) > Math.floor(fc.pts[i - 1][2] / 5)) {   // 5 s ticks
+      ctx.fillStyle = `rgba(${TH.fc},0.6)`; ctx.beginPath(); ctx.arc(fc.pts[i][0], fc.pts[i][1], 2.5 * px, 0, TAU); ctx.fill();
+    }
+    for (const e of fc.enc) {
+      if (e.type === 'bounce') { ctx.fillStyle = '#ffcf6b'; ctx.beginPath(); ctx.arc(e.x, e.y, 4 * px, 0, TAU); ctx.fill(); fcLabels.push([e.x, e.y, 'bounce', '#ffcf6b']); continue; }
+      ctx.strokeStyle = withAlpha(e.b.color, 0.55); ctx.lineWidth = 1.5 * px; ctx.setLineDash([3 * px, 4 * px]);
+      ctx.beginPath(); ctx.arc(e.bx, e.by, e.b.r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);   // ghost: where the world will be
+      if (Math.abs(e.dv) >= T.slingMin) fcLabels.push([e.x, e.y, `${bname(e.b)} ${e.dv > 0 ? '+' : ''}${e.dv | 0} · ${e.t.toFixed(0)}s`, e.dv > 0 ? '#ffb36b' : '#6bc8ff']);
+    }
+    if (fc.end) {
+      const ok = fc.end.b === tgt;
+      ctx.strokeStyle = ok ? '#9dffb5' : 'rgba(235,245,255,0.8)'; ctx.lineWidth = 2 * px;
+      ctx.beginPath(); ctx.arc(fc.end.x, fc.end.y, 7 * px, 0, TAU); ctx.stroke();
+      fcLabels.push([fc.end.x, fc.end.y, `${ok ? '✓ ' : ''}lands on ${bname(fc.end.b)} · ${fc.end.t.toFixed(0)}s`, ok ? '#9dffb5' : '#e6eeff']);
+    }
+  };
+  // your whole orbit around the star (Kepler ellipse) with periapsis / apoapsis
+  if (forecastOn && FC.osc && FC.osc.ellipse && refBody() === hub) {
+    const E = FC.osc.ellipse, ux = Math.cos(E.ang), uy = Math.sin(E.ang), cx = hub.x - ux * E.a * E.e, cy = hub.y - uy * E.a * E.e;
+    ctx.strokeStyle = withAlpha(TH.accent2, 0.35); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 8 * px]);
+    ctx.beginPath(); ctx.ellipse(cx, cy, E.a, E.b, E.ang, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    const pe = [hub.x + ux * E.a * (1 - E.e), hub.y + uy * E.a * (1 - E.e)], ap = [hub.x - ux * E.a * (1 + E.e), hub.y - uy * E.a * (1 + E.e)];
+    for (const [pt, lab] of [[pe, 'Pe ' + Math.round(E.a * (1 - E.e))], [ap, 'Ap ' + Math.round(E.a * (1 + E.e))]]) {
+      ctx.fillStyle = TH.accent2; ctx.beginPath(); ctx.arc(pt[0], pt[1], 5 * px, 0, TAU); ctx.fill();
+      fcLabels.push([pt[0], pt[1], lab, TH.accent2]);
+    }
+  }
+  drawFC(FC.kick, true);
+  drawFC(FC.main, false);
+  // "if you kick now" closest approach (shown while charging a kick)
+  if (forecastOn && FC.kick && FC.kick.ca && FC.kick.ca.d > 0 && P.kickCharging) {
+    const c = FC.kick.ca, ok = c.d <= T.anchorRange, col = ok ? TH.good : TH.accent2;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2 * px; ctx.setLineDash([2 * px, 5 * px]);
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.bx, c.by); ctx.stroke(); ctx.setLineDash([]);
+    fcLabels.push([c.x, c.y, `kick ${Math.round(FC.kickPow * 100)}% → closest ${Math.round(c.d)} · ${c.t.toFixed(0)}s${ok ? ' ✓ release!' : ''}`, col]);
+  }
+  // closest approach to the target: you ↔ where the target will be
+  if (forecastOn && FC.main && FC.main.ca && FC.main.ca.d > 0) {
+    const c = FC.main.ca, ok = c.d <= T.anchorRange, col = ok ? TH.good : TH.warn;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px; ctx.setLineDash([4 * px, 4 * px]);
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.bx, c.by); ctx.stroke();
+    ctx.beginPath(); ctx.arc(c.bx, c.by, c.b.r + 4 * px, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(c.x, c.y, 4 * px, 0, TAU); ctx.fill();
+    fcLabels.push([(c.x + c.bx) / 2, (c.y + c.by) / 2, `closest ${Math.round(c.d)} · ${c.t.toFixed(0)}s${ok ? ' ✓ catchable' : ''}`, col]);
+  }
+
+  // parcel
+  const drawParcel = (x, y, a) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+    ctx.shadowColor = '#ffb04a'; ctx.shadowBlur = 12; ctx.fillStyle = '#ffb04a'; ctx.fillRect(-5, -5, 10, 10);
+    ctx.shadowBlur = 0; ctx.strokeStyle = '#7a4a10'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.stroke();
+    ctx.restore();
+  };
+  if (job && job.state === 'wait') {
+    const f = job.from, rr = f.r + 5;
+    drawParcel(f.x + Math.cos(job.ang) * rr, f.y + Math.sin(job.ang) * rr, job.ang);
+  }
+
+  // particles
+  for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.fillRect(p.x - 1.5 * px, p.y - 1.5 * px, 3 * px, 3 * px); }
+  ctx.globalAlpha = 1;
+
+  // plasma tail while ripping
+  if (!P.on && (cam.rip > 0.05 || warp > 1.3)) {
+    const vs = Math.hypot(P.vx, P.vy) || 1, hx = P.vx / vs, hy = P.vy / vs, nx = -hy, ny = hx;
+    const Lt = (18 + vs * 0.09 * warp) * (0.4 + 0.6 * cam.rip), wdt = T.playerR * (0.9 + 0.3 * Math.sin(simT * 40));
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createLinearGradient(P.x, P.y, P.x - hx * Lt, P.y - hy * Lt);
+    g.addColorStop(0, withAlpha(TH.accent2, 0.75)); g.addColorStop(0.3, withAlpha(TH.warn, 0.35)); g.addColorStop(1, withAlpha(TH.warn, 0));
+    ctx.fillStyle = g; ctx.beginPath();
+    ctx.moveTo(P.x + nx * wdt, P.y + ny * wdt); ctx.lineTo(P.x - hx * Lt, P.y - hy * Lt); ctx.lineTo(P.x - nx * wdt, P.y - ny * wdt); ctx.closePath(); ctx.fill();
+    const hg = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, T.playerR * 3.2);
+    hg.addColorStop(0, withAlpha(TH.accent2, 0.55 * cam.rip)); hg.addColorStop(1, withAlpha(TH.accent2, 0));
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(P.x, P.y, T.playerR * 3.2, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
+  // player
+  const heavy = keys.heavy && !P.on;
+  const pr = heavy ? T.playerR * 1.25 : T.playerR;
+  const up = P.on ? P.ang : Math.atan2(P.vy - G0.dom.vy, P.vx - G0.dom.vx);
+  if (job && job.state === 'carry') drawParcel(P.x - Math.cos(up) * 10, P.y - Math.sin(up) * 10, up);
+  ctx.shadowColor = heavy ? '#5a8cff' : '#ffffff'; ctx.shadowBlur = 14;
+  ctx.fillStyle = heavy ? '#8fb4ff' : '#f4f8ff'; ctx.beginPath(); ctx.arc(P.x, P.y, pr, 0, TAU); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#1b2a44'; ctx.beginPath(); ctx.arc(P.x + Math.cos(up) * pr * 0.45, P.y + Math.sin(up) * pr * 0.45, pr * 0.38, 0, TAU); ctx.fill();
+  if (P.kickCharging && !P.on) {
+    ctx.strokeStyle = TH.accent2; ctx.lineWidth = 2.5 * px;
+    ctx.beginPath(); ctx.arc(P.x, P.y, pr + 6, -Math.PI / 2, -Math.PI / 2 + TAU * P.kickCharge); ctx.stroke();
+  }
+  if (P.charging) {
+    ctx.strokeStyle = P.charge >= 1 ? '#ffd28a' : '#cfe3ff'; ctx.lineWidth = 2.5 * px;
+    ctx.beginPath(); ctx.arc(P.x, P.y, pr + 6, -Math.PI / 2, -Math.PI / 2 + TAU * P.charge); ctx.stroke();
+  }
+  if (!P.on) for (let i = 0; i < P.kicks; i++) {
+    const ka = up + Math.PI + (i - (P.kicks - 1) / 2) * 0.6;
+    ctx.fillStyle = '#ffb36b'; ctx.beginPath(); ctx.arc(P.x + Math.cos(ka) * (pr + 5), P.y + Math.sin(ka) * (pr + 5), 2 * px + 1, 0, TAU); ctx.fill();
+  }
+  if (!P.on) {
+    // anchor ring: always shows which world Shift will grab
+    if (P.anchor) {
+      const rb = P.anchor, active = P.reach === rb, pulse = 0.5 + 0.5 * Math.sin(simT * 6);
+      ctx.strokeStyle = active ? 'rgba(143,180,255,0.95)' : 'rgba(143,180,255,0.45)';
+      ctx.lineWidth = (active ? 2.5 : 1.5) * px;
+      if (!active) ctx.setLineDash([5 * px, 5 * px]);
+      ctx.beginPath(); ctx.arc(rb.x, rb.y, rb.r + 8 + (active ? pulse * 3 : 0), 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      if (active) {
+        const dx = rb.x - P.x, dy = rb.y - P.y, dd = Math.hypot(dx, dy) || 1;
+        ctx.strokeStyle = `rgba(143,180,255,${0.35 + 0.5 * P.reachT})`; ctx.lineWidth = 2 * px;
+        ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(rb.x - dx / dd * rb.r, rb.y - dy / dd * rb.r); ctx.stroke();
+      }
+    } else if (keys.heavy) {
+      ctx.strokeStyle = 'rgba(255,140,140,0.35)'; ctx.lineWidth = 1.5 * px; ctx.setLineDash([3 * px, 9 * px]);
+      ctx.beginPath(); ctx.arc(P.x, P.y, T.anchorRange, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // orbital direction markers: W prograde, S retrograde, A in, D out (relative to the body you orbit)
+    const ax = orbitAxes(), R0 = pr + 22 * px + 6;
+    const mark = (dx, dy, lab, col) => {
+      const mx = P.x + dx * R0, my = P.y + dy * R0;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.arc(mx, my, 4.5 * px, 0, TAU); ctx.stroke();
+      ctx.fillStyle = col; ctx.font = `bold ${11 * px}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(lab, mx + dx * 11 * px, my + dy * 11 * px);
+    };
+    mark(ax.pro[0], ax.pro[1], 'W', withAlpha(TH.good, 0.85));
+    mark(-ax.pro[0], -ax.pro[1], 'S', withAlpha(TH.warn, 0.85));
+    mark(ax.out[0], ax.out[1], 'D', `rgba(${TH.fc},0.45)`);
+    mark(-ax.out[0], -ax.out[1], 'A', `rgba(${TH.fc},0.45)`);
+    ctx.textBaseline = 'alphabetic';
+    // kick chevron: where Space will push you
+    const k = P.kicks > 0 ? kickDir() : null;
+    if (k) {
+      const [dx, dy, mode] = k, a = Math.atan2(dy, dx), r0 = pr + 9;
+      ctx.save(); ctx.translate(P.x + dx * r0, P.y + dy * r0); ctx.rotate(a);
+      ctx.fillStyle = mode === 'prograde' ? withAlpha(TH.warn, 0.5) : withAlpha(TH.accent2, 0.95);
+      ctx.beginPath(); ctx.moveTo(6 * px + 2, 0); ctx.lineTo(-3, -4); ctx.lineTo(-3, 4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+
+  // screen space: labels
+  ctx.font = '12px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
+  for (const b of bodies) {
+    if (!b.name) continue;
+    const [sx, sy] = w2s(b.x, b.y);
+    ctx.fillStyle = b === tgt ? '#ffd28a' : withAlpha(b.color, 0.8); ctx.fillText(b.name + (b.gas ? ' ◌' : ''), sx, sy + b.r * cam.zoom + 17);
+  }
+  ctx.font = 'bold 12px ui-monospace,Menlo,monospace';
+  for (const [x, y, text, color] of fcLabels) {
+    const [sx, sy] = w2s(x, y);
+    ctx.fillStyle = 'rgba(4,5,11,0.6)'; const wdt = ctx.measureText(text).width; ctx.fillRect(sx - wdt / 2 - 4, sy - 25, wdt + 8, 16);
+    ctx.fillStyle = color; ctx.fillText(text, sx, sy - 13);
+  }
+  // popups
+  ctx.font = 'bold 13px ui-monospace,Menlo,monospace';
+  for (const p of popups) {
+    const [sx, sy] = w2s(p.x, p.y);
+    ctx.globalAlpha = clamp(2.2 - p.t, 0, 1); ctx.fillStyle = p.color; ctx.fillText(p.text, sx, sy - 24 - p.t * 30);
+  }
+  ctx.globalAlpha = 1;
+  // speed lines: the world rushing past while you rip
+  if (cam.rip > 0.04) {
+    const vsp = Math.hypot(P.vx, P.vy) || 1, scrSpeed = vsp * warp * cam.zoom;   // screen px/s
+    const cr = Math.cos(-cam.rot), sr = Math.sin(-cam.rot);
+    const sdx = (P.vx * cr - P.vy * sr) / vsp, sdy = (P.vx * sr + P.vy * cr) / vsp;   // your motion, on screen
+    ctx.save(); ctx.lineCap = 'round';
+    for (const sl of SPEEDLINES) {
+      sl.x -= sdx * sl.s * scrSpeed * frameDt / W * 0.9; sl.y -= sdy * sl.s * scrSpeed * frameDt / H * 0.9;   // the world rushes past
+      if (sl.x < -0.15 || sl.x > 1.15 || sl.y < -0.15 || sl.y > 1.15) {   // respawn ahead of you
+        if (Math.abs(sdx) > Math.abs(sdy)) { sl.x = sdx > 0 ? 1.1 : -0.1; sl.y = Math.random(); } else { sl.y = sdy > 0 ? 1.1 : -0.1; sl.x = Math.random(); }
+        sl.x += rand(-0.05, 0.05); sl.y += rand(-0.05, 0.05);
+      }
+      const x = sl.x * W, y = sl.y * H, len = clamp(scrSpeed * 0.05 * sl.l, 8, 320);
+      const edge = clamp(Math.hypot(sl.x - 0.5, sl.y - 0.5) * 2.6, 0.1, 1);   // keep the centre (your ship) clear
+      ctx.strokeStyle = `rgba(${TH.fc},${(0.08 + 0.28 * sl.s * edge) * cam.rip})`; ctx.lineWidth = sl.w;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - sdx * len, y - sdy * len); ctx.stroke();
+    }
+    ctx.restore();
+    const wv = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.72);
+    wv.addColorStop(0, 'rgba(0,0,0,0)'); wv.addColorStop(1, withAlpha(TH.accent2, 0.22 * cam.rip));
+    ctx.fillStyle = wv; ctx.fillRect(0, 0, W, H);
+  }
+  if (TH.labels) {   // blueprint distance labels
+    ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.fillStyle = `rgba(${TH.gridCol},0.6)`;
+    for (let r = gstep; r < sysR * 1.15; r += gstep) { const [sx, sy] = w2s(hub.x + r * 0.7071, hub.y - r * 0.7071); ctx.fillText(r.toLocaleString(), sx, sy); }
+  }
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  if (TH.scan) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1); }
+  if (minimapOn) drawMinimap(tgt);
+  // off-screen pointer
+  if (job && job.state !== 'done' && !cam.overview) {
+    const tb = job.state === 'wait' ? job.from : job.to;
+    const [sx, sy] = w2s(tb.x, tb.y), m = 40;
+    if (sx < m || sx > W - m || sy < m || sy > H - m) {
+      const dx = sx - W / 2, dy = sy - H / 2, sc = Math.min((W / 2 - m) / Math.abs(dx || 1e-6), (H / 2 - m) / Math.abs(dy || 1e-6));
+      const ex = W / 2 + dx * sc, ey = H / 2 + dy * sc, a = Math.atan2(dy, dx);
+      ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+      ctx.fillStyle = '#ffd28a'; ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#ffd28a'; ctx.font = '11px ui-monospace,Menlo,monospace';
+      ctx.fillText(tb.name, ex - Math.cos(a) * 26, ey - Math.sin(a) * 18 + 4);
+    }
+  }
+}
+
+function drawMinimap(tgt) {
+  const R = 95, cx = W - R - 16, cy = H - R - 16, sR = systemR() * 1.08, k = R / sR;
+  const m = (x, y) => [cx + (x - hub.x) * k, cy + (y - hub.y) * k];
+  ctx.save();
+  ctx.fillStyle = withAlpha(TH.bg, 0.82); ctx.strokeStyle = `rgba(${TH.rail},0.35)`; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, R + 6, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R + 6, 0, TAU); ctx.clip();
+  for (const b of bodies) if (b.parent && b.parent === hub) {
+    ctx.strokeStyle = b === tgt ? withAlpha(TH.accent, 0.5) : `rgba(${TH.rail},0.14)`;
+    ctx.beginPath(); ctx.arc(cx, cy, b.R * k, 0, TAU); ctx.stroke();
+  }
+  if (FC.main) {
+    ctx.strokeStyle = `rgba(${TH.fc},0.7)`; ctx.beginPath();
+    FC.main.pts.forEach((p, i) => { const [x, y] = m(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  }
+  for (const b of bodies) {
+    if (b.ghost) continue;
+    const [x, y] = m(b.x, b.y);
+    ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(x, y, Math.max(b === hub ? 4 : 1.8, b.r * k), 0, TAU); ctx.fill();
+    if (b === tgt) { ctx.strokeStyle = '#ffd28a'; ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.stroke(); }
+  }
+  const [px0, py0] = m(P.x, P.y);
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px0, py0, 3, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(207,227,255,0.45)'; ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
+  ctx.fillText('SYSTEM · M hide · Z overview', cx, cy - R - 12);
+}
+
+// ---------------- Flight School ----------------
+const DEFS = '<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah"/></marker>' +
+  '<marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="ah2"/></marker></defs>';
+const svg = inner => `<svg viewBox="0 0 320 210">${DEFS}${inner}</svg>`;
+const GUIDE = [
+  { t: 'Outer Run: how orbits really work',
+    svg: svg(`<circle class="o" cx="160" cy="105" r="32"/><circle class="o" cx="160" cy="105" r="47"/><circle class="o" cx="160" cy="105" r="64"/>
+      <circle class="o" cx="160" cy="105" r="82"/><circle class="o2" cx="160" cy="105" r="98"/><circle class="sun" cx="160" cy="105" r="11"/>
+      <circle class="pl" cx="192" cy="105" r="4.5"/><text x="198" y="118" class="dim">Dock</text>
+      <circle class="gas" cx="160" cy="41" r="10"/><text x="174" y="38" class="dim">Anvil</text>
+      <path class="p" d="M192 105 C 205 70, 190 36, 160 28 C 120 22, 90 40, 75 62" marker-end="url(#ah)"/>
+      <circle class="tg" cx="72" cy="66" r="5.5"/><text x="20" y="62" class="acc">Tern</text>
+      <text x="196" y="60" class="warnt">slingshot</text>`),
+    html: `You can't fly <i>at</i> a world — everything is falling around the star. You change your <b>orbit</b>, and the orbit takes you there.
+      <ul><li><b>Prograde</b> kicks (<kbd>W</kbd>) raise the far side of your orbit; <b>retrograde</b> (<kbd>S</kbd>) lowers it.</li>
+      <li>Kick where you're <b>fastest</b>. Arrive when the target is <b>there</b>.</li>
+      <li>Not enough push? <b>Steal speed</b> from a moving world (slingshot).</li></ul>
+      Your controls tell you all of this live. <kbd>→</kbd> to learn how.` },
+  { t: 'Read the sky',
+    svg: svg(`<circle class="o" cx="70" cy="140" r="60"/><circle class="o2" cx="70" cy="140" r="190"/><circle class="sun" cx="70" cy="140" r="12"/>
+      <path class="p" d="M118 104 C 160 60, 220 50, 252 70" marker-end="url(#ah)"/><circle class="me" cx="118" cy="104" r="4"/>
+      <path class="pk" d="M118 104 C 170 40, 240 25, 290 40"/><text x="200" y="22" style="fill:var(--accent2)">if you kick now</text>
+      <circle class="tg" cx="275" cy="92" r="11" style="fill:none;stroke:var(--accent);stroke-dasharray:3 3"/><line class="gd" x1="252" y1="70" x2="270" y2="84"/>
+      <text x="175" y="118" class="ok">closest 120 · 24s ✓</text><text x="128" y="80">forecast</text>
+      <text x="230" y="140" class="acc">ghost = where</text><text x="230" y="153" class="acc">Tern will be</text>`),
+    html: `<ul><li><b>White line</b>: your exact path for the next ${45}s. Dots every 5s.</li>
+      <li><b>Dashed blue</b>: your path <i>if you kick now</i> — aim with W/S/A/D and compare.</li>
+      <li><b>Dashed ghost</b>: where a world will be when you pass. The label is the slingshot you'll get.</li>
+      <li><b>Closest-approach line</b> to your target turns <span class="ok">green ✓</span> when it's close enough to catch.</li>
+      <li><b>Dashed ellipse</b>: your whole orbit, with <b>Pe</b> (closest to star, fastest) and <b>Ap</b> (farthest, slowest).</li></ul>` },
+  { t: 'Raise or lower your orbit: W and S',
+    svg: svg(`<circle class="o" cx="170" cy="105" r="45"/><circle class="o2" cx="170" cy="105" r="88"/><circle class="sun" cx="170" cy="105" r="10"/>
+      <ellipse class="p" cx="148.5" cy="105" rx="66.5" ry="63"/><circle class="me" cx="215" cy="105" r="4.5"/>
+      <line class="w" x1="215" y1="105" x2="215" y2="70" marker-end="url(#ah)"/><text x="222" y="80" class="warnt">W here</text>
+      <circle class="tg" cx="82" cy="105" r="6"/><text x="16" y="96" class="acc">arrive at Ap</text><text x="16" y="110" class="dim">half an orbit later</text>
+      <text x="222" y="128" class="dim">your orbit</text><text x="232" y="40" class="acc">target orbit</text>`),
+    html: `A <b>prograde</b> kick (<kbd>W</kbd>, along your motion) raises the <b>opposite side</b> of your orbit — not the spot where you kick.
+      Half an orbit later you reach the new high point (<b>Ap</b>).<br><br>
+      <b>Retrograde</b> (<kbd>S</kbd>) does the reverse: lowers the far side, to fall inward.<br><br>
+      <kbd>A</kbd>/<kbd>D</kbd> (radial in/out) mostly <i>tilt</i> the orbit — ~3× less effective. Your last runs: 57% of kicks were radial.
+      Pointing at the target feels right but wastes kicks.` },
+  { t: 'Kick where you are fastest',
+    svg: svg(`<ellipse class="o" cx="150" cy="105" rx="110" ry="62"/><circle class="sun" cx="236" cy="105" r="10"/>
+      <circle class="me" cx="260" cy="105" r="4.5"/><line class="w" x1="260" y1="105" x2="260" y2="58" marker-end="url(#ah)"/>
+      <text x="200" y="45" class="warnt">Pe: fastest</text><text x="200" y="58" class="ok">kick here ×3</text>
+      <circle cx="40" cy="105" r="4.5" style="fill:var(--dim)"/><line class="g2" x1="40" y1="105" x2="40" y2="88" marker-end="url(#ah2)"/>
+      <text x="20" y="130" class="dim">Ap: slowest</text><text x="20" y="143" class="dim">kick = small effect</text>`),
+    html: `The same kick adds far more orbital energy when you're moving fast — at <b>Pe</b>, or deep in a world's pull right after launch, or during a close flyby.
+      That's the <b>Oberth effect</b>.<br><br>
+      Recipes: <ul><li>Going <b>out</b>: kick <kbd>W</kbd> at Pe.</li><li>Going <b>in</b>: kick <kbd>S</kbd> at Ap (slowest — cheapest to stop).</li>
+      <li>Best of all: kick <kbd>W</kbd> at the bottom of a slingshot.</li></ul>
+      Only 9% of your kicks were near your top speed.` },
+  { t: 'Slingshot: steal a moving world\'s speed',
+    svg: svg(`<circle class="gas" cx="170" cy="100" r="22"/><line class="g2" x1="170" y1="100" x2="235" y2="100" marker-end="url(#ah2)"/><text x="200" y="92" style="fill:var(--accent2)">Anvil moves →</text>
+      <path class="p" d="M60 190 C 90 140, 120 80, 140 70 C 160 60, 150 120, 120 140 C 90 160, 60 150, 20 160" style="opacity:.25"/>
+      <path class="p" d="M70 195 C 110 150, 125 110, 140 90 C 150 75, 175 60, 300 40" marker-end="url(#ah)"/>
+      <text x="200" y="30" class="ok">behind it: +speed</text><text x="10" y="150" class="dim">in front: −speed</text>`),
+    html: `Pass close <b>behind</b> a moving world (the side it's leaving) and its gravity drags you along: you leave <b>faster</b>, swung outward.
+      Pass <b>in front</b> and you leave slower — the way to drop inward.<br><br>
+      <ul><li>Closer = bigger effect. The faint dashed ring is the slingshot zone.</li>
+      <li>The <b>motion streak</b> on each world's orbit shows which side is behind.</li>
+      <li>The forecast labels the pass (<i>Anvil +80</i>) before you commit.</li>
+      <li>Gas giants (◌) can't be landed on — they bounce you. Perfect slingshots.</li></ul>` },
+  { t: 'Timing: launch windows',
+    svg: svg(`<circle class="o" cx="160" cy="105" r="40"/><circle class="o2" cx="160" cy="105" r="85"/><circle class="sun" cx="160" cy="105" r="9"/>
+      <circle class="me" cx="200" cy="105" r="4.5"/><path class="p" d="M200 105 C 205 50, 150 18, 90 40 C 82 44, 78 48, 76 52" marker-end="url(#ah)"/>
+      <circle class="tg" cx="160" cy="20" r="6"/><path d="M160 20 A85 85 0 0 0 98 46" class="g2" marker-end="url(#ah2)"/>
+      <text x="168" y="16" class="acc">target now</text><text x="20" y="70" class="ok">you both arrive</text><text x="20" y="84" class="ok">here together</text>`),
+    html: `Reaching the target's <i>orbit</i> isn't enough — the target has to <b>be there</b> when you arrive. It keeps moving while you fly.<br><br>
+      <ul><li>On the ground, <b>hold <kbd>Space</kbd></b> at full charge: the forecast shows your launch path and closest approach live.</li>
+      <li>Walk (<kbd>A</kbd>/<kbd>D</kbd>) to change the launch angle. Your world turns under you — wait.</li>
+      <li><b>Release when the line turns <span class="ok">green ✓</span>.</b></li>
+      <li>In flight, small <kbd>W</kbd>/<kbd>S</kbd> kicks change your timing. <kbd>F</kbd> fast-forwards the wait.</li></ul>` },
+  { t: 'Catching a world on your own orbit',
+    svg: svg(`<circle class="o2" cx="160" cy="105" r="85"/><circle class="sun" cx="160" cy="105" r="9"/>
+      <ellipse class="p" cx="174" cy="105" rx="71" ry="66" style="opacity:.9"/>
+      <circle class="me" cx="245" cy="105" r="4.5"/><line class="g2" x1="245" y1="105" x2="245" y2="125" marker-end="url(#ah2)"/><text x="252" y="128" style="fill:var(--accent2)">S: slow down</text>
+      <circle class="tg" cx="203" cy="31" r="6"/><text x="212" y="28" class="acc">target, ahead</text>
+      <text x="96" y="105" class="dim">lower orbit =</text><text x="96" y="118" class="dim">shorter lap</text>
+      <path d="M245 80 A85 85 0 0 0 214 38" class="g2" marker-end="url(#ah2)" style="opacity:.5"/>
+      <text x="40" y="196" class="ok">back at the top one lap later — right under it</text>`),
+    html: `The trickiest rule in orbital mechanics: <b>speeding up makes you fall behind</b>. A prograde kick raises your orbit, and higher orbits are slower.<br><br>
+      <ul><li><b>Target ahead of you?</b> Kick <kbd>S</kbd> (retrograde). You drop into a lower, <b>shorter</b> lap, gain on it every orbit, and come back up under it.</li>
+      <li><b>Target behind?</b> Kick <kbd>W</kbd>: rise into a slower orbit and let it catch you.</li>
+      <li>The size of the kick sets <i>how much</i> you gain per lap. <b>Hold <kbd>Space</kbd></b> to build power (20→100%) — the dashed path updates live. <b>Release when its closest approach turns green.</b></li>
+      <li>The instruments show the <b>phase</b> (how far ahead/behind it is). Then <kbd>F</kbd> to fast-forward and <kbd>Shift</kbd> to catch.</li></ul>` },
+  { t: 'Catch and land',
+    svg: svg(`<circle class="pl" cx="210" cy="105" r="22"/><circle cx="210" cy="105" r="80" class="gd"/><text x="230" y="30" class="ok">landing-gear range</text>
+      <path class="p" d="M20 60 C 80 70, 130 90, 150 100" marker-end="url(#ah)"/><circle class="me" cx="150" cy="100" r="4.5"/>
+      <path d="M150 100 C 165 104, 178 106, 187 106" style="stroke:var(--accent2);stroke-width:2;fill:none;stroke-dasharray:3 3"/>
+      <text x="40" y="150" class="dim">hold Shift: tether + match speed</text>`),
+    html: `When your target is <b>ringed</b> (inside the landing-gear range), hold <kbd>Shift</kbd>: it pulls you in and matches your speed to the world.<br><br>
+      <ul><li>The landing gear can't change your orbit — it only works up close. Get there first, then catch.</li>
+      <li>Arriving too fast? Kick <kbd>S</kbd> (retrograde) <i>relative to the world</i> just before.</li>
+      <li><kbd>Q</kbd>/<kbd>Tab</kbd> picks a different world to catch.</li></ul>` },
+  { t: 'Moon launch: jump with the moon',
+    svg: svg(`<circle class="gas" cx="140" cy="110" r="28"/><circle class="o" cx="140" cy="110" r="70"/><circle class="pl" cx="210" cy="110" r="6"/>
+      <line class="g2" x1="210" y1="110" x2="210" y2="70" marker-end="url(#ah2)"/><text x="218" y="80" style="fill:var(--accent2)">Wisp's motion</text>
+      <path class="p" d="M216 104 C 240 60, 270 40, 310 30" marker-end="url(#ah)"/><text x="200" y="160" class="ok">jump this way:</text><text x="200" y="173" class="ok">moon speed + yours</text>
+      <text x="108" y="114" class="dim">Anvil</text>`),
+    html: `A moon whips around its giant. Jump <b>the way it's moving</b> and you leave with the moon's speed <i>plus</i> your jump — a free slingshot.<br><br>
+      Watch the moon's motion streak, wait until it's swinging the direction you want to go, and use the launch preview (hold <kbd>Space</kbd>).` },
+  { t: 'Recipes',
+    svg: '',
+    html: `<ul>
+      <li><b>Short hop</b> (neighbour orbit): hold Space, release on green ✓, Shift to catch.</li>
+      <li><b>Outward, far</b>: launch toward a giant → slingshot <i>behind</i> it → <kbd>W</kbd> at the bottom of the pass → coast (<kbd>F</kbd>) → catch.</li>
+      <li><b>Outward from a moon</b>: jump with the moon's motion.</li>
+      <li><b>Inward</b>: launch <i>against</i> your world's motion, or <kbd>S</kbd> at Ap, or pass <i>in front</i> of a world.</li>
+      <li><b>Missed?</b> Don't spam kicks. Look at the ellipse: is your Ap/Pe reaching the gold orbit? Fix the <i>size</i> first (W/S), then the <i>timing</i>.</li>
+      <li><b>Coasting?</b> Hold <kbd>F</kbd> to warp (up to ×8). It brakes by itself before slingshots, arrivals and landings — just keep holding.</li>
+      <li>★ ratings: delivered · under par time · used a slingshot (or ≤1 kick).</li></ul>
+      <span class="sub">Open this any time with <kbd>B</kbd>.</span>` },
+];
+let guideIdx = null;
+function showGuide(i) {
+  guideIdx = clamp(i, 0, GUIDE.length - 1);
+  const g = GUIDE[guideIdx], last = guideIdx === GUIDE.length - 1;
+  showPanel(`<div class="hdr">Flight School <i>${guideIdx + 1} / ${GUIDE.length}</i></div><h2>${g.t}</h2>
+    ${g.svg ? `<div class="cols">${g.svg}<div>${g.html}</div></div>` : `<div>${g.html}</div>`}
+    <div class="foot"><span><kbd>←</kbd> <kbd>→</kbd> page · <kbd>Enter</kbd> ${last ? 'fly' : 'next'} · <kbd>Esc</kbd> close</span>
+    <span class="dots">${GUIDE.map((_, j) => `<span class="${j === guideIdx ? 'on' : ''}"></span>`).join('')}</span></div>`, null);
+  logEv('guide', { page: guideIdx });
+}
+
+// ---------------- coach (live advice) ----------------
+const fmt = n => isFinite(n) ? Math.round(n).toLocaleString() : '∞';
+const giant = () => bodies.find(b => b.gas);
+function coachText() {
+  if (!job || job.state === 'done' || paused) return '';
+  const tgt = currentTarget(); if (!tgt) return '';
+  const osc = FC.osc, ca = FC.main && FC.main.ca, band = sweptBand(tgt) || [orbitRadiusOf(tgt), orbitRadiusOf(tgt)];
+  const tR = orbitRadiusOf(tgt), g = giant(), sling = g ? `slingshot close <b>behind ${g.name}</b>` : 'use a slingshot';
+  if (P.on) {
+    if (P.on === tgt) return job.state === 'wait' ? `Walk <kbd>A</kbd> / <kbd>D</kbd> to the parcel ▣ on ${tgt.name}.` : '';
+    if (!P.charging) return `Hold <kbd>Space</kbd> to preview your launch to <b>${tgt.name}</b> — release when the closest-approach line turns <span class="ok">green</span>.`;
+    if (FC.main && !FC.main.exit) return `This jump falls back onto ${P.on.name} — hold <kbd>Space</kbd> longer for more charge.`;
+    if (ca && ca.d <= T.anchorRange) return `<span class="ok">✓ Release now</span> — this launch passes ${fmt(ca.d)} from ${tgt.name} in ${ca.t.toFixed(0)}s.`;
+    if (osc && osc.Ap < band[0]) return `This jump tops out at <b>Ap ${fmt(osc.Ap)}</b>; ${tgt.name} orbits at ${fmt(tR)}. Not enough energy — ${sling}, or kick <kbd>W</kbd> right after launch.`;
+    if (osc && osc.Pe > band[1]) return `This launch never falls to ${tgt.name}'s orbit (Pe ${fmt(osc.Pe)}). Launch from the side where you'd jump <b>against</b> ${P.on.name}'s motion.`;
+    return `Your orbit reaches ${tgt.name}'s — now it's <b>timing</b>. Keep holding; walk to change angle; release on <span class="ok">green</span> · <kbd>Esc</kbd> cancels.`;
+  }
+  if (P.kickCharging && FC.kick && FC.kick.ca) {
+    const kc = FC.kick.ca;
+    return kc.d <= T.anchorRange ? `<span class="ok">✓ Release now</span> — a ${Math.round(FC.kickPow * 100)}% kick meets ${tgt.name} in ${kc.t.toFixed(0)}s.`
+      : FC.kickPow >= 1 ? `Even 100% won't meet ${tgt.name} this time round. Release anyway — you'll keep gaining every lap (watch the <b>phase</b>), and kick again once it recharges.`
+      : `Charging ${Math.round(FC.kickPow * 100)}% — the dashed path passes ${fmt(kc.d)} from ${tgt.name}. Keep holding for more, release on <span class="ok">green</span> · <kbd>Esc</kbd> cancels.`;
+  }
+  if (P.reach === tgt) return `Landing gear on <b>${tgt.name}</b> — keep holding <kbd>Shift</kbd>.`;
+  if (P.anchor === tgt) return `<span class="ok">${tgt.name} is in reach</span> — hold <kbd>Shift</kbd> to catch it.`;
+  if (ca && ca.d <= T.anchorRange) return `<span class="ok">✓ On course</span> — ${tgt.name} passes ${fmt(ca.d)} away in ${ca.t.toFixed(0)}s. Hold <kbd>F</kbd> to get there sooner, <kbd>Shift</kbd> when it's ringed.`;
+  const ref = refBody(), kick = P.kicks > 0 ? '' : ' (kick recharging)';
+  if (ref !== hub && ref !== tgt) return `You're inside <b>${ref.name}</b>'s pull — a <kbd>W</kbd> kick here (you're fast) is extra strong${kick}.`;
+  if (osc && osc.Ap < band[0]) return `Your <b>Ap ${fmt(osc.Ap)}</b> falls short of ${tgt.name} (${fmt(tR)}). Kick <kbd>W</kbd> — best at <b>Pe</b>${kick} — or ${sling}.`;
+  if (osc && osc.Pe > band[1]) return `Your <b>Pe ${fmt(osc.Pe)}</b> stays above ${tgt.name} (${fmt(tR)}). Kick <kbd>S</kbd> — best at <b>Ap</b>${kick} — or pass in front of a world.`;
+  const ph = FC.phase;
+  if (ph && ph.closing && ph.eta < 2.5 * ph.Ty) return `${tgt.name} is ${ph.deg.toFixed(0)}° ${ph.ahead ? 'ahead' : 'behind'} on your orbit and you're closing ~${ph.lapGainDeg.toFixed(0)}°/lap — in reach in ~${fmt(ph.eta)}s. Hold <kbd>F</kbd>.`;
+  if (ph && ph.ahead) return `${tgt.name} is <b>${ph.deg.toFixed(0)}° ahead</b> on your orbit. Speeding up won't catch it — a higher orbit is <i>slower</i>. <b>Slow down</b>: hold <kbd>S</kbd> + <kbd>Space</kbd>, watch the dashed path, release when it turns <span class="ok">green</span>. You'll drop lower, lap faster, and meet it${kick}.`;
+  if (ph) return `${tgt.name} is <b>${ph.deg.toFixed(0)}° behind</b> you. Let it catch up: hold <kbd>W</kbd> + <kbd>Space</kbd> to rise into a slower orbit; release when the dashed path turns <span class="ok">green</span>${kick}.`;
+  if (ca) return `Your orbit crosses ${tgt.name}'s but misses by <b>${fmt(ca.d)}</b> — timing. Small <kbd>W</kbd>/<kbd>S</kbd> kicks shift your arrival; watch the dashed line${kick}.`;
+  return `Coasting. Hold <kbd>F</kbd> to fast-forward · <kbd>Z</kbd> for the whole system.`;
+}
+
+// ---------------- panels ----------------
+const chip = (b, now) => `<span class="chip${now ? ' now' : ''}"><span class="dot" style="background:${b.color};color:${b.color}"></span>${b.name}</span>`;
+function missionHTML() {
+  const L = LEVELS[level];
+  let route = '', state = '';
+  if (job && job.state !== 'done') {
+    route = `${chip(job.from, job.state === 'wait')}<span class="arrow">→</span>${chip(job.to, job.state === 'carry')}`;
+    state = job.state === 'wait' ? `Pick up at <b>${job.from.name}</b>` : `Deliver to <b>${job.to.name}</b>`;
+  } else state = 'Delivered — next job incoming…';
+  const tipLeft = job && job.state === 'carry' ? Math.max(0, T.tipWindow - (simT - job.t0)) : T.tipWindow;
+  return `<div class="hdr">Level ${level} · ${L.name}${assist && L.assistT ? ' · assist' : ''}<i>${'★'.repeat(Math.min(levelStars, 15))}${levelStars > 15 ? '+' : ''}</i></div>
+    <div class="title">${state}</div>
+    <div class="route">${route}</div>
+    <div class="pips">${Array.from({ length: T.levelGoal }, (_, i) => `<span class="${i < lvlCount ? 'on' : ''}"></span>`).join('')}</div>
+    <div class="row"><span>Job ${Math.min(lvlCount + 1, T.levelGoal)} of ${T.levelGoal}${job && job.state === 'carry' ? ` · ${fmt(simT - job.t0)}s (par ${T.par})` : ''}</span><span>tip <b>${fmt(tipLeft)}s</b></span></div>
+    <div class="bar"><i style="width:${(100 * tipLeft / T.tipWindow).toFixed(0)}%"></i></div>
+    <div class="row" style="margin-top:8px"><span>Credits <b>${credits.toLocaleString()}</b></span><span>Seeds <b>${seeds}</b></span></div>`;
+}
+function instrHTML() {
+  const tgt = currentTarget(), osc = FC.osc || (P.on ? null : oscOrbit()), ca = FC.main && FC.main.ca;
+  const ref = P.on ? P.on : refBody(), sp = P.on ? 0 : orbitAxes(ref).speed;
+  const max = systemR() * 1.05, pc = r => (100 * Math.sqrt(clamp(r / max, 0, 1))).toFixed(1);   // sqrt scale: room for inner orbits
+  let gauge = '';
+  if (osc && hub) {
+    const band = tgt ? (sweptBand(tgt) || [orbitRadiusOf(tgt), orbitRadiusOf(tgt)]) : null;
+    gauge = `<div class="gauge"><div class="track"></div>
+      ${band ? `<div class="tgt" style="left:${pc(band[0])}%;width:${Math.max(0.8, pc(band[1]) - pc(band[0]))}%"></div><div class="tick" style="left:${pc((band[0] + band[1]) / 2)}%;color:var(--accent)">${tgt.name}</div>` : ''}
+      <div class="band" style="left:${pc(osc.Pe)}%;width:${Math.max(0.8, pc(osc.Ap) - pc(osc.Pe))}%"></div>
+      ${pc(Math.min(osc.Ap, max)) - pc(osc.Pe) < 26
+        ? `<div class="tick lo" style="left:${((+pc(osc.Pe) + +pc(Math.min(osc.Ap, max))) / 2).toFixed(1)}%">Pe ${fmt(osc.Pe)} · Ap ${fmt(osc.Ap)}</div>`
+        : `<div class="tick lo" style="left:${pc(osc.Pe)}%">Pe ${fmt(osc.Pe)}</div><div class="tick lo" style="left:${pc(Math.min(osc.Ap, max))}%">Ap ${fmt(osc.Ap)}</div>`}</div>`;
+  }
+  const reach = osc && tgt ? (() => { const b = sweptBand(tgt) || [0, 0]; return osc.Ap >= b[0] && osc.Pe <= b[1]; })() : false;
+  return `<div class="hdr">${P.on ? 'Landed' : 'Flight'}<i>${P.on ? 'on ' + bname(P.on) : 'orbiting ' + bname(ref)}</i></div>
+    ${osc ? `<div class="row"><span>${P.on ? 'Launch orbit (charging)' : 'Your orbit vs target'}</span><span class="${reach ? 'ok' : 'warn'}">${reach ? 'reaches ✓' : 'falls short'}</span></div>${gauge}` :
+      `<div class="sub" style="margin:6px 0 8px">Hold <kbd>Space</kbd> to preview a launch orbit.</div>`}
+    ${ca && !P.on || (ca && P.charging) ? `<div class="row"><span>Closest to ${ca.b.name}</span><b class="${ca.d <= T.anchorRange ? 'ok' : 'warn'}">${fmt(ca.d)} · ${ca.t.toFixed(0)}s</b></div>` : ''}
+    ${FC.phase ? `<div class="row"><span>Phase to ${FC.phase.tb.name || tgt.name}</span><b class="${FC.phase.closing ? 'ok' : 'warn'}">${FC.phase.deg.toFixed(0)}° ${FC.phase.ahead ? 'ahead' : 'behind'}${FC.phase.closing && isFinite(FC.phase.eta) ? ' · ' + fmt(FC.phase.eta) + 's' : ''}</b></div>` : ''}
+    <div class="row"><span>Speed</span><b>${fmt(sp)}</b></div>
+    <div class="row"><span>Kicks</span><span>${Array.from({ length: T.kickMax }, (_, i) => `<span style="color:${i < P.kicks ? 'var(--warn)' : 'var(--faint)'}">●</span>`).join(' ')}${P.kicks < T.kickMax && !P.on ? ` <span class="sub">${(T.kickRecharge - P.kickT).toFixed(0)}s</span>` : ''}</span></div>
+    <div class="row"><span>${LEVELS[level].assistT && !assist ? 'Landing gear' : 'Anchor'}</span><b class="${P.reach ? 'ok' : ''}">${P.anchor ? bname(P.anchor) + (P.reach ? ' · pulling' : '') : 'none in ' + fmt(T.anchorRange)}</b></div>
+    ${warp > 1.05 ? `<div class="row"><span class="warn">▶▶ warp ×${warp.toFixed(1)}</span><span class="sub">auto-brakes before action</span></div>` : ''}`;
+}
+function keysHTML() {
+  const k = (a, b) => `<div class="k"><span>${a}</span><span>${b}</span></div>`;
+  const gear = LEVELS[level].assistT && !assist ? 'landing gear' : 'anchor';
+  let h = (P.charging || P.kickCharging) ? k('<kbd>Esc</kbd>', `<span class="warn">cancel ${P.charging ? 'jump' : 'kick'}</span>`) : '';
+  h += P.on ? k('<kbd>A</kbd><kbd>D</kbd>', 'walk') + k('<kbd>Space</kbd> hold', 'charge + preview') + k('release', 'jump')
+    : k('<kbd>Space</kbd> hold', 'kick (longer = stronger)') + k('+<kbd>W</kbd> / <kbd>S</kbd>', 'prograde / retro') + k('+<kbd>A</kbd> / <kbd>D</kbd>', 'radial in / out') +
+      k('+arrows', 'screen aim') + k('<kbd>Shift</kbd> hold', `${gear} (${fmt(T.anchorRange)})`) + k('<kbd>Q</kbd>', 'switch catch target') + k('<kbd>F</kbd> hold', 'warp ×8 (auto-brakes)');
+  h += '<div class="sep"></div>' + k('<kbd>B</kbd>', 'Flight School') + k('<kbd>Z</kbd> · <kbd>M</kbd>', 'overview · map') + k('<kbd>T</kbd>', 'theme: ' + TH.name);
+  if (keysFull) h += k('<kbd>P</kbd>', 'forecast') + k('<kbd>V</kbd>', 'frame target') + k('<kbd>C</kbd>', 'camera spin') + k('<kbd>G</kbd>', 'assist (L2)') +
+    k('click+hold', 'plant seed') + k('right-click', 'dig seed') + k('<kbd>X</kbd>', 'respawn') + k('wheel', 'zoom') + k('<kbd>L</kbd>', 'download log');
+  h += k('<kbd>H</kbd>', keysFull ? 'fewer keys' : 'all keys');
+  return `<div class="hdr">Controls<i>${P.on ? 'ground' : 'flight'}</i></div>${h}<div class="sep"></div><div class="sub" style="font-size:10px">● log ${LOG.status} · <kbd>L</kbd> download</div>`;
+}
+let hudT = 0;
+function updateHud() {
+  missionEl.innerHTML = missionHTML();
+  instrEl.innerHTML = instrHTML();
+  keysEl.innerHTML = keysHTML();
+  let c = coachText();
+  if (warp > 1.25 && !paused) {
+    const ne = nextEvent(), sp = Math.round(Math.hypot(P.vx, P.vy));
+    c = `<span class="tag">WARP</span><span class="warpnum">×${warp.toFixed(1)}</span><span class="num">${sp} px/s</span>` +
+        (ne ? ` <span class="sub">· ${ne.label} in ${fmt(ne.t)}s</span>` : '');
+  }
+  coachEl.innerHTML = c ? (c.includes('class="tag"') ? c : `<span class="tag">COACH</span>${c}`) : '';
+  coachEl.style.display = c ? 'block' : 'none';
+}
+
+// ---------------- level flow ----------------
+let panelAction = null, levelT0 = 0;
+const panelEl = document.getElementById('done');
+const panelOpen = () => panelEl.style.display === 'block';
+function showPanel(html, action) { panelEl.innerHTML = html; panelEl.style.display = 'block'; panelAction = action; paused = true; }
+function hidePanel() { panelEl.style.display = 'none'; panelAction = null; paused = false; guideIdx = null; }
+function startLevel(n) {
+  level = n; applyTuning(n); LEVELS[n].build(); finishBodies(); placeBodies(simT);
+  lvlCount = 0; levelDone = false; levelT0 = simT; job = null; jobTimer = 0; levelStars = 0;
+  buildDust();
+  P.lastBody = LEVELS[n].start(); respawn(); P.ang = -Math.PI / 2; P.trail.length = 0;
+  step(0); P.Eprev = helioE();
+  newJob();
+  cam.x = P.x; cam.y = P.y;
+  LOG.meta.bodies = bodies.filter(b => !b.ghost).map(b => ({ name: bname(b), r: b.r, M: b.M, R: b.R, parent: bname(b.parent), gas: b.gas }));
+  logEv('level_start', { level: n, assist });
+  if (n === 1) { popup(P.x, P.y - 60, LEVELS[n].intro, '#ffd28a'); toast('Press B any time for Flight School'); }
+  else showGuide(0);
+}
+
+// ---------------- main loop ----------------
+LOG.meta.sampleCols = ['t', 'x', 'y', 'vx', 'vy', 'on', 'dom', 'heavy', 'zoom', 'camRot', 'anchor', 'pulling', 'warp'];
+let last = performance.now(), acc = 0;
+{ const ut = new URLSearchParams(location.search || '').get('theme'); if (ut && THEMES[ut]) themeName = ut; }
+setTheme(themeName);
+const urlLevel = +new URLSearchParams(location.search || '').get('level') || 1;
+startLevel(LEVELS[urlLevel] ? urlLevel : 1);
+let sampleT = 0, flushT = 5, frameDt = 1 / 60;
+function frame(now) {
+  const rawMs = now - last;
+  const dt = Math.min(0.05, rawMs / 1000); last = now;
+  LOG.perf.frames++; if (rawMs > 25) LOG.perf.hitches++; if (rawMs > LOG.perf.worstMs && LOG.perf.frames > 30) LOG.perf.worstMs = rawMs | 0;
+  for (const ts of pendingInputTs) if (LOG.perf.inputLatMs.length < 2000) LOG.perf.inputLatMs.push(Math.round(now - ts));
+  pendingInputTs.length = 0;
+  if ((sampleT -= dt) <= 0) {
+    sampleT = 0.1;
+    LOG.samples.push([+simT.toFixed(2), P.x | 0, P.y | 0, P.vx | 0, P.vy | 0, bname(P.on), bname(G0.dom),
+      keys.heavy ? 1 : 0, +cam.zoom.toFixed(2), +cam.rot.toFixed(2), bname(P.anchor), P.reach ? 1 : 0, +warp.toFixed(1)]);
+  }
+  if ((flushT -= dt) <= 0) { flushT = 5; flushLog(false); }
+  if (!paused) {   // charging runs on real time, so warp never rushes your aim
+    if (P.on && P.charging) { if (P.charge >= 1) P.fullHold += dt; P.charge = Math.min(1, P.charge + dt / T.chargeTime); }
+    if (P.kickCharging && !P.on) P.kickCharge = Math.min(1, P.kickCharge + dt / T.kickChargeTime);
+  }
+  const nev = paused ? null : nextEvent();
+  const cap = P.charging || P.kickCharging || P.reach ? 1 : clamp((nev ? nev.t : Infinity) / T.warpLead, 1, T.warpMax);
+  const want = keys.ff && !paused ? cap : 1;
+  warp += (want - warp) * (1 - Math.exp(-dt * (want > warp ? 1.5 : 7)));   // ramp up gently, brake hard
+  if (warp < 1.01 && want === 1) warp = 1;
+  if (keys.ff && nev && warp > 2 && cap < 2.2 && !braked) { braked = true; toast('▶ ' + nev.label, 'gain'); logEv('warp_slow', { label: nev.label }); }
+  if (cap > 4) braked = false;
+  frameDt = dt;
+  if (paused) acc = 0; else acc += dt * warp;
+  while (acc >= T.step) { step(T.step); acc -= T.step; }
+  if (planting) planting.t += dt;
+  if (!paused && job && job.state === 'done') { jobTimer -= dt; if (jobTimer <= 0) { newJob(); popup(P.x, P.y, `New job: ${job.from.name} → ${job.to.name}`, '#ffd28a'); } }
+  const E = helioE(), rawGain = P.on || paused || !dt ? 0 : (E - P.Eprev) / dt / Math.max(50, Math.hypot(P.vx, P.vy));
+  P.Eprev = E; P.gainS = (P.gainS || 0) + (rawGain - (P.gainS || 0)) * Math.min(1, dt * 8);   // smoothed
+  const gain = P.gainS;
+  if (!paused) { P.trail.push([P.x, P.y, gain]); if (P.trail.length > 320) P.trail.shift(); }
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+  for (const p of popups) p.t += dt;
+  for (let i = popups.length - 1; i >= 0; i--) if (popups[i].t > 2.2) popups.splice(i, 1);
+  updateCamera(dt);
+  updateForecast();
+  draw();
+  if ((hudT -= dt) <= 0) { updateHud(); hudT = 0.1; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

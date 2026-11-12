@@ -1,0 +1,4 @@
+# local play telemetry (personal play data)
+logs/
+.DS_Store
+node_modules/
