@@ -17,6 +17,14 @@ Press **B** in game for Flight School.
   **Q** switch catch target · hold **F** to warp (auto-brakes before action) · **Esc** cancels a charge
 - **Z** overview · **M** minimap · **P** forecast · **T** theme · **H** all keys
 
+## Touch (phones & tablets)
+Touch controls switch on with your first touch (and off again when you press a key).
+- **Left thumb**: drop a stick anywhere on the left. On the ground it walks; in flight it aims the kick and snaps to
+  **PRO / RETRO / IN / OUT** (the markers around you) when you're close to one.
+- **Right thumb**: hold **◉ JUMP / KICK** to charge, release to go · hold **GEAR** to catch a world · hold **WARP** · **TARGET** switches the catch target · **✕** cancels a charge or closes a panel.
+- **☰** has Flight School, instruments, overview, map, forecast, theme, sound, assist, fullscreen.
+- Pinch to zoom; long-press open space to plant a seed (or dig one up). The launcher's left-handed setting mirrors the layout.
+
 ## Paul's Arcade / PWA
 Published at **https://paulgibeault.github.io/orbital/** and listed in [Paul's Arcade](https://paulgibeault.github.io/#app=orbital).
 - Loads the arcade SDK (`/arcade-sdk.js`); saves (ghosts, theme, sound) live under `arcade.v1.orbital.*` via `Arcade.state`.

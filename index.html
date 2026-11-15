@@ -96,6 +96,58 @@
   #done svg .warnt{fill:var(--warn)}
   /* Launcher font-scale preference (the SDK sets --font-scale on <html>; 1 when standalone). */
   .panel,#toasts{zoom:var(--font-scale,1)}
+  /* ---- touch controls (body.touch is set on the first touch, cleared by a real keypress) ---- */
+  #touch{display:none}
+  body.touch{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  body.touch #touch{display:block}
+  body.touch canvas{cursor:default;touch-action:none}
+  body.touch #keys,body.touch.instr-off #instr{display:none}
+  .tb{position:fixed;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font:700 12px var(--font);letter-spacing:.08em;color:var(--ink);background:var(--panel);border:1px solid var(--brd);
+    border-radius:50%;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);touch-action:none;-webkit-tap-highlight-color:transparent;
+    box-shadow:0 6px 20px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.08);padding:0;opacity:.88}
+  .tb.held{background:var(--glow);border-color:var(--accent2);transform:scale(.94);opacity:1}
+  #tbGo{right:calc(22px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));width:96px;height:96px;font-size:30px;color:var(--accent);border-color:var(--accent)}
+  #tbGo span{font-size:12px;letter-spacing:.14em;color:var(--ink)}
+  #tbGear{right:calc(128px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));width:66px;height:66px;font-size:11px}
+  #tbWarp{right:calc(112px + env(safe-area-inset-right));bottom:calc(100px + env(safe-area-inset-bottom));width:58px;height:58px;font-size:11px;color:var(--accent2)}
+  #tbTgt{right:calc(34px + env(safe-area-inset-right));bottom:calc(134px + env(safe-area-inset-bottom));width:52px;height:52px;font-size:9px}
+  #tbCancel{right:calc(198px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:46px;height:46px;font-size:18px;color:var(--bad);display:none}
+  body.can-cancel #tbCancel{display:flex}
+  /* left-handed (launcher setting): buttons on the left, stick on the right */
+  body.lefty #tbGo{right:auto;left:calc(22px + env(safe-area-inset-left))}
+  body.lefty #tbGear{right:auto;left:calc(128px + env(safe-area-inset-left))}
+  body.lefty #tbWarp{right:auto;left:calc(112px + env(safe-area-inset-left))}
+  body.lefty #tbTgt{right:auto;left:calc(34px + env(safe-area-inset-left))}
+  body.lefty #tbCancel{right:auto;left:calc(198px + env(safe-area-inset-left))}
+  body.lefty.touch #instr{left:auto;right:calc(12px + env(safe-area-inset-right))}
+  body.on-ground #tbWarp,body.on-ground #tbTgt,body.on-ground #tbGear{opacity:.35}
+  #tbMenu{right:calc(14px + env(safe-area-inset-right));top:calc(14px + env(safe-area-inset-top));width:46px;height:46px;border-radius:14px;font-size:20px}
+  #tmenu{right:calc(14px + env(safe-area-inset-right));top:calc(66px + env(safe-area-inset-top));padding:8px;display:none;z-index:7;pointer-events:auto;
+    grid-template-columns:1fr 1fr;gap:6px;width:min(300px,80vw)}
+  body.menu-open #tmenu{display:grid}
+  .tm{font:600 13px var(--font);color:var(--ink);background:var(--faint);border:1px solid var(--brd);border-radius:10px;padding:11px 8px;touch-action:none}
+  .tm.held{background:var(--glow)}
+  #stick{position:fixed;display:none;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;z-index:6;pointer-events:none;
+    border:1px solid var(--brd);background:radial-gradient(circle,rgba(127,200,255,.08),rgba(127,200,255,.02) 70%)}
+  #knob{position:absolute;left:36px;top:36px;width:48px;height:48px;border-radius:50%;background:var(--glow);border:1px solid var(--accent2);box-shadow:0 0 14px var(--glow)}
+  body.touch #done{pointer-events:auto;width:min(760px,94vw);max-height:88vh;overflow:auto;padding:18px 20px}
+  body.touch #mission{left:calc(12px + env(safe-area-inset-left));top:calc(12px + env(safe-area-inset-top));width:min(300px,calc(100vw - 100px));padding:10px 12px 8px}
+  body.touch #instr{left:calc(12px + env(safe-area-inset-left));bottom:calc(12px + env(safe-area-inset-bottom));width:min(300px,calc(100vw - 100px));padding:10px 12px}
+  body.touch #coach{bottom:calc(12px + env(safe-area-inset-bottom));max-width:calc(100vw - 420px);min-width:200px;font-size:13px;padding:8px 14px}
+  body.touch #combo{bottom:calc(120px + env(safe-area-inset-bottom))}
+  body.touch #log{display:none}
+  @media (max-width:820px){ body.touch #done .cols{grid-template-columns:1fr} body.touch #done svg{max-height:34vh} }
+  @media (max-height:520px){
+    body.touch .panel{zoom:calc(var(--font-scale,1) * .82)}
+    body.touch #combo{bottom:auto;top:calc(10px + env(safe-area-inset-top))}   /* keep the middle clear for flying */
+    body.touch #toasts{top:84px}
+  }
+  @media (orientation:portrait){
+    body.touch #coach{bottom:calc(190px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px)}
+    body.touch #mission{width:calc(100vw - 172px)}
+    body.touch #combo{bottom:calc(300px + env(safe-area-inset-bottom))}
+  }
 </style>
 </head>
 <body data-theme="nebula">
@@ -108,6 +160,29 @@
 <div id="combo" class="panel"></div>
 <div id="done" class="panel"></div>
 <div id="log"></div>
+<div id="touch" aria-hidden="true">
+  <div id="stick"><div id="knob"></div></div>
+  <button id="tbMenu" class="tb" type="button">☰</button>
+  <div id="tmenu" class="panel">
+    <button class="tm" data-key="KeyB" type="button">Flight School</button>
+    <button class="tm" data-key="Instr" type="button">Instruments</button>
+    <button class="tm" data-key="KeyZ" type="button">Overview</button>
+    <button class="tm" data-key="KeyM" type="button">Map</button>
+    <button class="tm" data-key="KeyP" type="button">Forecast</button>
+    <button class="tm" data-key="KeyV" type="button">Frame target</button>
+    <button class="tm" data-key="KeyT" type="button">Theme</button>
+    <button class="tm" data-key="KeyN" type="button">Sound</button>
+    <button class="tm" data-key="KeyG" type="button">Assist</button>
+    <button class="tm" data-key="Full" type="button">Fullscreen</button>
+    <button class="tm" data-key="KeyX" type="button">Respawn</button>
+    <button class="tm" data-key="KeyL" type="button">Save log</button>
+  </div>
+  <button id="tbGo" class="tb" data-key="Space" data-hold="1" type="button">◉<span>JUMP</span></button>
+  <button id="tbGear" class="tb" data-key="ShiftLeft" data-hold="1" type="button">GEAR</button>
+  <button id="tbWarp" class="tb" data-key="KeyF" data-hold="1" type="button">WARP</button>
+  <button id="tbTgt" class="tb" data-key="KeyQ" type="button">TARGET</button>
+  <button id="tbCancel" class="tb" data-key="Escape" type="button">✕</button>
+</div>
 <script>
 'use strict';
 // ============================================================
@@ -138,9 +213,11 @@ const STORE = {
 const PREF = {   // launcher settings, with standalone-safe defaults
   fontScale: () => { try { return ARC ? ARC.settings.fontScale() || 1 : 1; } catch (e) { return 1; } },
   reducedMotion: () => { try { return ARC ? !!ARC.settings.reducedMotion() : false; } catch (e) { return false; } },
+  lefty: () => { try { return ARC && ARC.settings.handedness ? ARC.settings.handedness() === 'left' : false; } catch (e) { return false; } },
   volume: () => { try { const v = ARC ? ARC.settings.audioVolume() : 1; return typeof v === 'number' ? v : 1; } catch (e) { return 1; } },
 };
 let fontMult = PREF.fontScale(), calm = PREF.reducedMotion();   // cached; refreshed on launcher settings change
+let touchMode = false, touchAim = null, instrTouch = false, lefty = false;   // touch controls (see 'touch controls')
 const isLoopback = () => /^(127\.|localhost$|0\.0\.0\.0$|::1$|\[::1\]$)/.test((typeof location !== 'undefined' && location.hostname) || '');
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -148,7 +225,7 @@ const $ = id => document.getElementById(id);
 const comboEl = $('combo'), missionEl = $('mission'), instrEl = $('instr'), keysEl = $('keys'), coachEl = $('coach'), toastsEl = $('toasts'), logEl = $('log');
 let keysFull = false;
 function toast(text, cls = '') {
-  const d = document.createElement('div'); d.className = 'toast ' + cls; d.textContent = text;
+  const d = document.createElement('div'); d.className = 'toast ' + cls; d.textContent = typeof tl === 'function' ? tl(text) : text;
   toastsEl.appendChild(d); setTimeout(() => d.remove(), 2800);
 }
 let W = 0, H = 0, DPR = 1;
@@ -541,6 +618,7 @@ function orbitAxes(ref = refBody()) {
 // Kick direction. W/S = prograde/retrograde, A/D = radial in/out (the real orbital controls).
 // Arrows still aim on screen. No key = prograde.
 function kickDir() {
+  const tk = touchKickDir(); if (tk) return tk;   // touch stick (snaps to the orbital directions)
   const ax = orbitAxes();
   let dx = 0, dy = 0;
   if (keys.w) { dx += ax.pro[0]; dy += ax.pro[1]; }
@@ -1088,7 +1166,10 @@ function s2w(sx, sy) {
 const keys = { left: false, right: false, up: false, down: false, w: false, a: false, s: false, d: false, heavy: false, ff: false };
 let minimapOn = true;
 const KEYMAP = { ArrowLeft: 'left', KeyA: 'a', ArrowRight: 'right', KeyD: 'd', ArrowUp: 'up', KeyW: 'w', ArrowDown: 'down', KeyS: 's', ShiftLeft: 'heavy', ShiftRight: 'heavy', KeyF: 'ff' };
-addEventListener('keydown', e => {
+// Keyboard and touch share one path: touch buttons call onKeyDown/onKeyUp with synthetic events (vkey).
+addEventListener('keydown', e => { if (touchMode) setTouchMode(false); onKeyDown(e); });
+addEventListener('keyup', e => onKeyUp(e));
+function onKeyDown(e) {
   audioInit();   // browsers only allow audio after a user gesture
   if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = true;
   if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Tab', 'Backspace'].includes(e.code)) e.preventDefault();
@@ -1096,7 +1177,7 @@ addEventListener('keydown', e => {
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') anchorPress();
   if (e.code === 'KeyQ' || e.code === 'Tab') cycleAnchor();
   pendingInputTs.push(e.timeStamp);
-  logEv('key', { k: e.code, on: P.on ? bname(P.on) : null });
+  logEv('key', { k: e.code, on: P.on ? bname(P.on) : null, touch: e.synthetic ? 1 : undefined });
   if (!P.on && LOG.flight) {
     if (['left', 'right', 'up', 'down'].includes(KEYMAP[e.code])) LOG.flight.airSteer++;
     if (e.code === 'Space' && P.kicks <= 0) LOG.flight.extraSpace++;
@@ -1136,35 +1217,211 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyT' && !panelOpen()) { const names = Object.keys(THEMES); setTheme(names[(names.indexOf(themeName) + 1) % names.length]); toast('Theme: ' + TH.name); logEv('theme', { name: themeName }); }
   if (e.code === 'KeyN' && !panelOpen()) { setSound(!SND.on); toast(SND.on ? '♪ Sound on' : 'Sound muted'); logEv('sound', { on: SND.on }); }
   if (e.code === 'KeyV' && !panelOpen()) { cam.frame = !cam.frame; toast(cam.frame ? 'Camera frames you + target' : 'Camera follows you'); }
-});
-addEventListener('keyup', e => {
+}
+function onKeyUp(e) {
   if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false;
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') P.anchorLock = keys.heavy;
   if (!e.repeat) logEv('keyup', { k: e.code, on: P.on ? bname(P.on) : null });
   if (e.code === 'Space' && P.on && P.charging) jump();
   if (e.code === 'Space' && P.kickCharging) { P.kickCharging = false; if (!P.on) kick(P.kickCharge); }
-});
+}
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('mousedown', e => {
   audioInit();
   const [x, y] = s2w(e.clientX, e.clientY);
-  if (e.button === 2) {
-    let best = null, bd = Infinity;
-    for (const b of bodies) if (b.seed) { const d = Math.hypot(b.x - x, b.y - y) - b.r; if (d < bd) { bd = d; best = b; } }
-    if (best && bd < 25 / cam.zoom) removeSeed(best, 'seed dug up');
-  } else if (e.button === 0) {
-    if (seeds <= 0) { popup(x, y, 'no seeds — deliver more parcels', '#ff9c9c'); logEv('seed_none'); }
-    else planting = { x, y, t: 0 };
-  }
+  if (e.button === 2) digSeedAt(x, y);
+  else if (e.button === 0) startPlant(x, y);
 });
-addEventListener('mouseup', e => {
-  if (e.button !== 0 || !planting) return;
+addEventListener('mouseup', e => { if (e.button === 0) finishPlant(); });
+function finishPlant() {
+  if (!planting) return;
   const r = lerp(T.seedMinR, T.seedMaxR, Math.min(1, planting.t / T.seedHold));
   if (seedOk(planting.x, planting.y, r)) plantSeed(planting.x, planting.y, r);
   else { const why = seedProblem(planting.x, planting.y, r); popup(planting.x, planting.y, "can't plant: " + why, '#ff9c9c'); logEv('seed_fail', { r: +r.toFixed(1), why }); }
   planting = null;
-});
+}
+function digSeedAt(x, y) {
+  let best = null, bd = Infinity;
+  for (const b of bodies) if (b.seed) { const d = Math.hypot(b.x - x, b.y - y) - b.r; if (d < bd) { bd = d; best = b; } }
+  if (best && bd < 25 / cam.zoom) { removeSeed(best, 'seed dug up'); return true; }
+  return false;
+}
+function startPlant(x, y) {
+  if (seeds <= 0) { popup(x, y, 'no seeds — deliver more parcels', '#ff9c9c'); logEv('seed_none'); }
+  else planting = { x, y, t: 0 };
+}
 cv.addEventListener('wheel', e => { e.preventDefault(); cam.bias = clamp(cam.bias * Math.exp(-e.deltaY * 0.001), 0.12, 2.5); LOG.meta.lastZoomBias = +cam.bias.toFixed(2); }, { passive: false });
+
+// ---------------- touch controls ----------------
+// Left thumb: a floating stick (drop it anywhere on the left of the screen). On the ground it walks; in flight
+// it aims the kick on screen and snaps to prograde / retrograde / radial when you're close. Right thumb: the
+// big ◉ button (hold = charge a jump or kick, release = go), GEAR (hold = landing gear), WARP (hold), TARGET.
+// ☰ opens the toggles that live on letter keys. Pinch zooms; long-press open space plants a seed (or digs one up).
+// Everything funnels through onKeyDown/onKeyUp, so touch play logs and behaves exactly like the keyboard.
+const touchEl = document.getElementById('touch');
+const TOUCH_LABEL = { W: 'PRO', S: 'RETRO', A: 'IN', D: 'OUT' };
+function vkey(code, down) {
+  const e = { code, repeat: false, timeStamp: performance.now(), synthetic: true, preventDefault() {} };
+  if (down) onKeyDown(e); else onKeyUp(e);
+}
+function setTouchMode(on) {
+  if (touchMode === on) return;
+  touchMode = on; document.body.classList.toggle('touch', on);
+  if (on) instrTouch = innerWidth >= 1000 && innerHeight >= 700;   // tablets keep the instruments; phones open them from ☰
+  document.body.classList.toggle('instr-off', on && !instrTouch);
+  logEv('touch_mode', { on, w: innerWidth, h: innerHeight });
+  if (!on) touchReset();
+}
+// Rewrites keyboard hints for touch players. Applied to every HUD/panel string as it's rendered.
+function tl(h) {
+  if (!touchMode || !h) return h;
+  const go = P.on ? '◉ JUMP' : '◉ KICK';
+  return h
+    .replace(/Press <b>Enter<\/b>/g, 'Tap').replace(/<b>Esc<\/b>/g, '<b>✕</b>')
+    .replace(/<kbd>←<\/kbd> <kbd>→<\/kbd> page/g, 'tap left / right side to page')
+    .replace(/(Walk \(?)<kbd>A<\/kbd>\s*\/\s*<kbd>D<\/kbd>/g, '$1<kbd>◀ stick ▶</kbd>')
+    .replace(/<kbd>Q<\/kbd>\/<kbd>Tab<\/kbd>/g, '<kbd>TARGET</kbd>')
+    .replace(/<kbd>([^<]+)<\/kbd>/g, (m, k) => {
+      const map = { '→': 'tap', '←': 'tap left', Space: go, Shift: 'GEAR', F: 'WARP', Q: 'TARGET', Tab: 'TARGET', Esc: '✕', Enter: 'tap', B: '☰ School',
+        Z: '☰ Overview', G: '☰ Assist', M: '☰ Map', P: '☰ Forecast', T: '☰ Theme', N: '☰ Sound', W: 'stick → PRO', S: 'stick → RETRO',
+        A: 'stick → IN', D: 'stick → OUT' };
+      return map[k] ? `<kbd>${map[k]}</kbd>` : m;
+    })
+    .replace(/<kbd>stick → (PRO|RETRO|IN|OUT)<\/kbd>\s*\/\s*<kbd>stick → (PRO|RETRO|IN|OUT)<\/kbd>/g, '<kbd>stick → $1 / $2</kbd>')
+    .replace(/let go of F\b/g, 'let go of WARP');
+}
+// Touch aim in world space, snapped onto an orbital direction when within ~20° of one.
+function touchKickDir() {
+  if (!touchAim) return null;
+  const [sx, sy] = touchAim, L = Math.hypot(sx, sy), c = Math.cos(cam.rot), s = Math.sin(cam.rot);
+  const wx = (sx * c - sy * s) / L, wy = (sx * s + sy * c) / L;
+  const ax = orbitAxes();
+  for (const [dx, dy] of [ax.pro, [-ax.pro[0], -ax.pro[1]], ax.out, [-ax.out[0], -ax.out[1]]])
+    if (wx * dx + wy * dy > 0.94) return [dx, dy, 'orbit'];
+  return [wx, wy, 'aim'];
+}
+const STICK = { id: null, x0: 0, y0: 0, vx: 0, vy: 0, R: 56 };
+const WORLD = new Map();   // touches on open space: pinch + long-press
+let pinch = null;
+function touchReset() {
+  STICK.id = null; STICK.vx = STICK.vy = 0; touchAim = null; WORLD.clear(); pinch = null;
+  if (planting) planting = null;
+  for (const b of touchEl.querySelectorAll ? touchEl.querySelectorAll('.held') : []) b.classList.remove('held');
+  for (const k in keys) keys[k] = false;
+  P.charging = false; P.kickCharging = false;
+  drawStick();
+}
+function drawStick() {
+  const base = document.getElementById('stick'), knob = document.getElementById('knob');
+  if (STICK.id === null) { base.style.display = 'none'; return; }
+  base.style.display = 'block';
+  base.style.left = STICK.x0 + 'px'; base.style.top = STICK.y0 + 'px';
+  knob.style.transform = `translate(${STICK.vx * STICK.R}px, ${STICK.vy * STICK.R}px)`;
+}
+function touchTick() {   // per frame: the stick walks on the ground, aims in flight
+  if (STICK.id === null) { if (!P.kickCharging) touchAim = null; return; }
+  const m = Math.hypot(STICK.vx, STICK.vy);
+  if (P.on) { keys.left = STICK.vx < -0.3; keys.right = STICK.vx > 0.3; touchAim = null; }
+  else { keys.left = keys.right = false; touchAim = m > 0.25 ? [STICK.vx, STICK.vy] : (P.kickCharging ? touchAim : null); }
+}
+function stickMove(e) {
+  const dx = e.clientX - STICK.x0, dy = e.clientY - STICK.y0, d = Math.hypot(dx, dy), k = d > STICK.R ? STICK.R / d : 1;
+  STICK.vx = dx * k / STICK.R; STICK.vy = dy * k / STICK.R; drawStick();
+}
+cv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  e.preventDefault(); setTouchMode(true); audioInit();
+  document.body.classList.remove('menu-open');
+  if (panelOpen()) return;
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  const stickSide = lefty ? e.clientX > innerWidth * 0.55 : e.clientX < innerWidth * 0.45;   // launcher handedness mirrors the layout
+  if (STICK.id === null && stickSide && WORLD.size === 0) {
+    STICK.id = e.pointerId; STICK.x0 = e.clientX; STICK.y0 = e.clientY; STICK.vx = STICK.vy = 0; drawStick(); return;
+  }
+  const t = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), timer: null };
+  WORLD.set(e.pointerId, t);
+  if (WORLD.size === 2) {   // second finger: pinch, and nothing gets planted
+    for (const w of WORLD.values()) clearTimeout(w.timer);
+    planting = null;
+    const [a, b] = [...WORLD.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, bias: cam.bias };
+  } else if (WORLD.size === 1) {
+    t.timer = setTimeout(() => {   // long-press: dig a seed if one is under your finger, else start planting
+      if (WORLD.get(e.pointerId) !== t || pinch) return;
+      const [x, y] = s2w(t.x, t.y);
+      if (!digSeedAt(x, y)) startPlant(x, y);
+      t.planted = true;
+    }, 380);
+  }
+}, { passive: false });
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse') return;
+  if (e.pointerId === STICK.id) { stickMove(e); return; }
+  const t = WORLD.get(e.pointerId); if (!t) return;
+  t.x = e.clientX; t.y = e.clientY;
+  if (Math.hypot(t.x - t.x0, t.y - t.y0) > 12) clearTimeout(t.timer);
+  if (pinch && WORLD.size >= 2) {
+    const [a, b] = [...WORLD.values()];
+    cam.bias = clamp(pinch.bias * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d), 0.12, 2.5); LOG.meta.lastZoomBias = +cam.bias.toFixed(2);
+  } else if (planting && t.planted) { const [x, y] = s2w(t.x, t.y); planting.x = x; planting.y = y; }
+});
+function worldUp(e) {
+  if (e.pointerType === 'mouse') return;
+  if (e.pointerId === STICK.id) {
+    STICK.id = null; STICK.vx = STICK.vy = 0; keys.left = keys.right = false;
+    if (!P.kickCharging) touchAim = null;   // a kick being charged keeps its aim until you release ◉
+    drawStick(); return;
+  }
+  const t = WORLD.get(e.pointerId); if (!t) return;
+  clearTimeout(t.timer); WORLD.delete(e.pointerId);
+  if (t.planted && e.type === 'pointerup') finishPlant(); else if (t.planted) planting = null;
+  if (WORLD.size < 2) pinch = null;
+}
+cv.addEventListener('pointerup', worldUp); cv.addEventListener('pointercancel', worldUp);
+// Buttons: data-key is the key they stand for; data-hold="1" means press/release (Space, Shift, F), else a tap.
+for (const b of touchEl.querySelectorAll ? touchEl.querySelectorAll('[data-key]') : []) {
+  const code = b.dataset.key, hold = b.dataset.hold === '1';
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation(); setTouchMode(true); audioInit();
+    try { b.setPointerCapture(e.pointerId); } catch (err) {}
+    b.classList.add('held');
+    if (b.closest('#tmenu')) document.body.classList.remove('menu-open');
+    if (code === 'Instr') { instrTouch = !instrTouch; document.body.classList.toggle('instr-off', !instrTouch); return; }
+    if (code === 'Full') { const d = document.documentElement; try { (document.fullscreenElement ? document.exitFullscreen() : d.requestFullscreen()).catch(() => {}); } catch (err) {} return; }
+    vkey(code, true); if (!hold) vkey(code, false);
+  });
+  const up = e => {
+    if (!b.classList.contains('held')) return;
+    b.classList.remove('held');
+    if (hold) {
+      if (code === 'Space' && e.type === 'pointercancel') vkey('Escape', true);   // a cancelled touch never fires a kick
+      vkey(code, false);
+      if (code === 'Space' && STICK.id === null) touchAim = null;
+    }
+  };
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+document.getElementById('tbMenu').addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation(); setTouchMode(true); document.body.classList.toggle('menu-open');
+});
+// Panels (level complete, Flight School): tap to continue; in Flight School the left third pages back.
+document.getElementById('done').addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  e.preventDefault(); setTouchMode(true);
+  const r = panelEl.getBoundingClientRect();
+  vkey(guideIdx !== null && e.clientX < r.left + r.width / 3 ? 'ArrowLeft' : 'Enter', true);
+});
+function updateTouchHud() {
+  if (!touchMode) return;
+  const go = document.getElementById('tbGo'), gear = document.getElementById('tbGear');
+  go.querySelector('span').textContent = P.on ? 'JUMP' : 'KICK';
+  gear.textContent = LEVELS[level].assistT && !assist ? 'GEAR' : 'ANCHOR';
+  document.body.classList.toggle('can-cancel', P.charging || P.kickCharging || panelOpen());
+  document.body.classList.toggle('on-ground', !!P.on);
+}
+function applyHandedness() { lefty = PREF.lefty(); document.body.classList.toggle('lefty', lefty); }
+applyHandedness();
+if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches) setTouchMode(true);
 
 // ---------------- sound (WebAudio synth — no audio files) ----------------
 const SND = { ctx: null, on: true };
@@ -1754,10 +2011,11 @@ function draw() {
       ctx.fillStyle = col; ctx.font = `bold ${11 * px * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(lab, mx + dx * 11 * px, my + dy * 11 * px);
     };
-    mark(ax.pro[0], ax.pro[1], 'W', withAlpha(TH.good, 0.85));
-    mark(-ax.pro[0], -ax.pro[1], 'S', withAlpha(TH.warn, 0.85));
-    mark(ax.out[0], ax.out[1], 'D', `rgba(${TH.fc},0.45)`);
-    mark(-ax.out[0], -ax.out[1], 'A', `rgba(${TH.fc},0.45)`);
+    const ML = touchMode ? TOUCH_LABEL : { W: 'W', S: 'S', A: 'A', D: 'D' };
+    mark(ax.pro[0], ax.pro[1], ML.W, withAlpha(TH.good, 0.85));
+    mark(-ax.pro[0], -ax.pro[1], ML.S, withAlpha(TH.warn, 0.85));
+    mark(ax.out[0], ax.out[1], ML.D, `rgba(${TH.fc},0.45)`);
+    mark(-ax.out[0], -ax.out[1], ML.A, `rgba(${TH.fc},0.45)`);
     ctx.textBaseline = 'alphabetic';
     // kick chevron: where Space will push you
     const k = P.kicks > 0 ? kickDir() : null;
@@ -1845,7 +2103,9 @@ function draw() {
 }
 
 function drawMinimap(tgt) {
-  const R = 95, cx = W - R - 16, cy = H - R - 16, sR = systemR() * 1.08, k = R / sR;
+  // touch: smaller, and up top under ☰ so the right thumb's buttons don't cover it
+  const R = touchMode ? Math.max(34, Math.min(80, Math.min(W, H) * 0.15, (H - 290) / 2)) : 95, cx = W - R - 16,
+    cy = touchMode ? R + 76 : H - R - 16, sR = systemR() * 1.08, k = R / sR;
   const m = (x, y) => [cx + (x - hub.x) * k, cy + (y - hub.y) * k];
   ctx.save();
   ctx.fillStyle = withAlpha(TH.bg, 0.82); ctx.strokeStyle = `rgba(${TH.rail},0.35)`; ctx.lineWidth = 1.5;
@@ -1871,7 +2131,7 @@ function drawMinimap(tgt) {
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px0, py0, 3, 0, TAU); ctx.fill();
   ctx.restore();
   ctx.fillStyle = 'rgba(207,227,255,0.45)'; ctx.font = `${10 * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center';
-  ctx.fillText('SYSTEM · M hide · Z overview', cx, cy - R - 12);
+  ctx.fillText(touchMode ? 'SYSTEM' : 'SYSTEM · M hide · Z overview', cx, cy - R - 12);
 }
 
 // ---------------- Flight School ----------------
@@ -2102,9 +2362,10 @@ function keysHTML() {
 }
 let hudT = 0;
 function updateHud() {
-  missionEl.innerHTML = missionHTML();
-  instrEl.innerHTML = instrHTML();
-  keysEl.innerHTML = keysHTML();
+  missionEl.innerHTML = tl(missionHTML());
+  instrEl.innerHTML = tl(instrHTML());
+  if (!touchMode) keysEl.innerHTML = keysHTML();
+  updateTouchHud();
   let c = coachText();
   if (BT && !paused) c = BT.perfect
     ? `<span class="tag">SLINGSHOT</span><b style="color:#ffe08a">✦ PERFECT WINDOW ✦</b> — kick now (<kbd>W</kbd> + <kbd>Space</kbd>) for ×${T.perfectBoost} power at ${bname(BT.b)}`
@@ -2115,6 +2376,7 @@ function updateHud() {
     c = `<span class="tag">WARP${assist ? ' · ASSIST' : ''}</span><span class="warpnum">×${warp.toFixed(1)}</span><span class="num">${sp} px/s</span>` +
         (ne ? ` <span class="${hot ? 'bad' : 'sub'}" style="${hot ? 'font-weight:700' : ''}">· ${hot ? '⚠ ' : ''}${ne.label} in ${rl.toFixed(1)}s${hot && !assist ? ' — let go!' : ''}</span>` : '');
   }
+  c = tl(c);
   coachEl.innerHTML = c ? (c.includes('class="tag"') ? c : `<span class="tag">COACH</span>${c}`) : '';
   coachEl.style.display = c ? 'block' : 'none';
   if (COMBO.hits && !paused) {
@@ -2128,7 +2390,7 @@ function updateHud() {
 let panelAction = null, levelT0 = 0;
 const panelEl = document.getElementById('done');
 const panelOpen = () => panelEl.style.display === 'block';
-function showPanel(html, action) { panelEl.innerHTML = html; panelEl.style.display = 'block'; panelAction = action; paused = true; }
+function showPanel(html, action) { panelEl.innerHTML = tl(html); panelEl.style.display = 'block'; panelAction = action; paused = true; }
 function hidePanel() { panelEl.style.display = 'none'; panelAction = null; paused = false; guideIdx = null; }
 function startLevel(n) {
   level = n; applyTuning(n); LEVELS[n].build(); finishBodies(); placeBodies(simT);
@@ -2158,6 +2420,7 @@ function frame(now) {
   LOG.perf.frames++; if (rawMs > 25) LOG.perf.hitches++; if (rawMs > LOG.perf.worstMs && LOG.perf.frames > 30) LOG.perf.worstMs = rawMs | 0;
   for (const ts of pendingInputTs) if (LOG.perf.inputLatMs.length < 2000) LOG.perf.inputLatMs.push(Math.round(now - ts));
   pendingInputTs.length = 0;
+  touchTick();
   if ((sampleT -= dt) <= 0) {
     sampleT = 0.1;
     LOG.samples.push([+simT.toFixed(2), P.x | 0, P.y | 0, P.vx | 0, P.vy | 0, bname(P.on), bname(G0.dom),
@@ -2228,11 +2491,12 @@ function hydrate() {   // (re)read saved state: on SDK ready (framed storage arr
   if (t && THEMES[t] && !new URLSearchParams(location.search || '').get('theme')) setTheme(t);
 }
 if (ARC) {
-  ARC.ready.then(hydrate);
+  ARC.ready.then(() => { hydrate(); applyHandedness(); });
   ARC.onStateReplaced(hydrate);
-  ARC.onSettingsChange(() => { fontMult = PREF.fontScale(); calm = PREF.reducedMotion(); applyVolume(); });
+  ARC.onSettingsChange(() => { fontMult = PREF.fontScale(); calm = PREF.reducedMotion(); applyVolume(); applyHandedness(); });
   ARC.onSuspend(() => {
     for (const k in keys) keys[k] = false;   // a key held while switching away must not stay stuck
+    if (touchMode) touchReset();
     if (SND.ctx && SND.ctx.state === 'running') SND.ctx.suspend();
   });
   ARC.onResume(() => { last = performance.now(); acc = 0; if (SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume(); });
