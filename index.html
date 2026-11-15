@@ -2,7 +2,15 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Orbital Courier — prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#04050b">
+<title>Orbital Courier</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.png" type="image/png">
+<link rel="apple-touch-icon" href="icon.png">
+<!-- Paul's Arcade SDK (root-relative, served by the launcher origin). Absent under `node server.js`,
+     where the game falls back to plain localStorage. Arcade.init runs at the top of the game script. -->
+<script src="/arcade-sdk.js"></script>
 <style>
   :root{
     --bg:#04050b; --panel:rgba(12,16,34,.64); --brd:rgba(150,175,255,.16); --ink:#e3ebff; --dim:#8c9cc6; --faint:rgba(220,230,255,.08);
@@ -86,6 +94,8 @@
   #done svg .w{stroke:var(--warn);stroke-width:2.4;fill:none} #done svg .g2{stroke:var(--accent2);stroke-width:2;fill:none}
   #done svg text{fill:var(--ink);font:10.5px var(--mono)} #done svg .dim{fill:var(--dim)} #done svg .acc{fill:var(--accent)} #done svg .ok{fill:var(--good)}
   #done svg .warnt{fill:var(--warn)}
+  /* Launcher font-scale preference (the SDK sets --font-scale on <html>; 1 when standalone). */
+  .panel,#toasts{zoom:var(--font-scale,1)}
 </style>
 </head>
 <body data-theme="nebula">
@@ -106,6 +116,32 @@
 //  Planets ride Keplerian rails, so the field is always shifting.
 //  No trajectory prediction: you learn the sky by feel.
 // ============================================================
+
+// ---------------- Paul's Arcade glue ----------------
+// With the SDK loaded (GitHub Pages / launcher), state lives under arcade.v1.orbital.* via Arcade.state —
+// the only storage a sandboxed launcher frame can reach. Without it (node server.js, headless harness)
+// we fall back to plain localStorage under the old oc-* keys.
+const ARC = typeof window !== 'undefined' && window.Arcade ? window.Arcade : null;
+if (ARC) Arcade.init({ gameId: 'orbital' });
+const STORE = {
+  get(k, dflt) {
+    try {
+      if (ARC) { const v = ARC.state.get(k); return v === undefined || v === null ? dflt : v; }
+      const s = localStorage.getItem('oc-' + k); if (s == null) return dflt;
+      try { return JSON.parse(s); } catch (e) { return s; }   // older builds stored bare strings ('off', 'amber')
+    } catch (e) { return dflt; }
+  },
+  set(k, v) {
+    try { if (ARC) ARC.state.set(k, v); else localStorage.setItem('oc-' + k, JSON.stringify(v)); } catch (e) {}
+  },
+};
+const PREF = {   // launcher settings, with standalone-safe defaults
+  fontScale: () => { try { return ARC ? ARC.settings.fontScale() || 1 : 1; } catch (e) { return 1; } },
+  reducedMotion: () => { try { return ARC ? !!ARC.settings.reducedMotion() : false; } catch (e) { return false; } },
+  volume: () => { try { const v = ARC ? ARC.settings.audioVolume() : 1; return typeof v === 'number' ? v : 1; } catch (e) { return 1; } },
+};
+let fontMult = PREF.fontScale(), calm = PREF.reducedMotion();   // cached; refreshed on launcher settings change
+const isLoopback = () => /^(127\.|localhost$|0\.0\.0\.0$|::1$|\[::1\]$)/.test((typeof location !== 'undefined' && location.hostname) || '');
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const $ = id => document.getElementById(id);
@@ -353,8 +389,8 @@ function addStyle(pts, text, color) {
 }
 
 // ---------------- telemetry ----------------
-// Records play so we can tune feel from real data. Sent to server.js (logs/) when served over http,
-// otherwise kept in localStorage — press L to download.
+// Records play so we can tune feel from real data. Sent to server.js (logs/) when served from localhost,
+// otherwise kept in memory — press L to download.
 const LOG = {
   id: new Date().toISOString().replace(/[:.]/g, '-'),
   meta: { started: new Date().toISOString(), screen: [innerWidth, innerHeight], tuning: T, version: 19,
@@ -368,8 +404,9 @@ const bname = b => b ? (b.name || (b.seed ? 'seed' : b.ghost ? 'ghost' : 'rock')
 let pendingInputTs = [];
 function flushLog(final) {
   const body = JSON.stringify(LOG, (k, v) => k === 'flight' ? undefined : v);
-  try { localStorage.setItem('oc-log-latest', body); } catch (e) {}
-  if (!location.protocol.startsWith('http')) return;
+  if (!ARC) try { localStorage.setItem('oc-log-latest', body); } catch (e) {}
+  // Only the local dev server (server.js) collects logs; public builds keep them in memory (press L to download).
+  if (ARC || !location.protocol.startsWith('http') || !isLoopback()) return;
   const url = '/log?id=' + LOG.id;
   if (final && navigator.sendBeacon) { navigator.sendBeacon(url, body); return; }
   fetch(url, { method: 'POST', body, headers: { 'content-type': 'application/json' } })
@@ -918,7 +955,7 @@ function comboEnd(reason) {
 // ---------------- ghost routes ----------------
 // Your fastest delivery on each route replays as a ghost (rotated so its start lines up with today's pickup world).
 let GHOSTS = {};
-try { GHOSTS = JSON.parse(localStorage.getItem('oc-ghosts') || '{}') || {}; } catch (e) { GHOSTS = {}; }
+GHOSTS = STORE.get('ghosts', {}) || {};
 const ghostKey = j => `L${level}:${j.from.name}>${j.to.name}`;
 function recordGhost() {
   if (!job || job.state !== 'carry' || !job.rec) return;
@@ -931,7 +968,7 @@ function saveGhost(j, t) {
   if (best && t >= best.t) { toast(`Ghost: ${t.toFixed(1)}s · best ${best.t.toFixed(1)}s (+${(t - best.t).toFixed(1)}s)`); return; }
   const stride = Math.max(1, Math.ceil(j.rec.length / 700));
   GHOSTS[key] = { t, ang0: j.ang0, pts: j.rec.filter((_, i) => i % stride === 0 || i === j.rec.length - 1) };
-  try { localStorage.setItem('oc-ghosts', JSON.stringify(GHOSTS)); } catch (e) {}
+  STORE.set('ghosts', GHOSTS);
   toast(best ? `🏁 New best route! ${t.toFixed(1)}s (−${(best.t - t).toFixed(1)}s)` : `🏁 Route record set: ${t.toFixed(1)}s — your ghost will race you next time`, 'good');
   logEv('ghost_best', { key, t: +t.toFixed(1), prev: best ? +best.t.toFixed(1) : null });
 }
@@ -1131,12 +1168,13 @@ cv.addEventListener('wheel', e => { e.preventDefault(); cam.bias = clamp(cam.bia
 
 // ---------------- sound (WebAudio synth — no audio files) ----------------
 const SND = { ctx: null, on: true };
-try { SND.on = localStorage.getItem('oc-sound') !== 'off'; } catch (e) {}
+SND.on = STORE.get('sound', 'on') !== 'off';
+const masterLevel = () => SND.on ? 0.55 * PREF.volume() : 0;
 function audioInit() {
   if (SND.ctx) { if (SND.ctx.state === 'suspended') SND.ctx.resume(); return; }
   const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!AC) return;
   const c = new AC(); SND.ctx = c;
-  SND.master = c.createGain(); SND.master.gain.value = SND.on ? 0.55 : 0; SND.master.connect(c.destination);
+  SND.master = c.createGain(); SND.master.gain.value = masterLevel(); SND.master.connect(c.destination);
   const nb = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   SND.noise = nb;
@@ -1183,8 +1221,10 @@ const sfx = {
   ui: () => tone(760, 0.05, 'square', 0.035),
 };
 function setSound(on) {
-  SND.on = on; try { localStorage.setItem('oc-sound', on ? 'on' : 'off'); } catch (e) {}
-  if (SND.master) SND.master.gain.setTargetAtTime(on ? 0.55 : 0, SND.ctx.currentTime, 0.05);
+  SND.on = on; STORE.set('sound', on ? 'on' : 'off'); applyVolume();
+}
+function applyVolume() {
+  if (SND.master) SND.master.gain.setTargetAtTime(masterLevel(), SND.ctx.currentTime, 0.05);
 }
 function updateAudio() {
   const c = SND.ctx; if (!c) return; const t = c.currentTime, sp = Math.hypot(P.vx, P.vy);
@@ -1218,11 +1258,11 @@ const THEMES = {
                good: '#d6ff9a', warn: '#ff9a4a', dust: '255,190,120', scan: true },
 };
 let themeName = 'nebula';
-try { const t = localStorage.getItem('oc-theme'); if (t && THEMES[t]) themeName = t; } catch (e) {}
+{ const t = STORE.get('theme', null); if (t && THEMES[t]) themeName = t; }
 let TH = THEMES[themeName];
 function setTheme(name) {
   themeName = name; TH = THEMES[name]; document.body.dataset.theme = name;
-  try { localStorage.setItem('oc-theme', name); } catch (e) {}
+  STORE.set('theme', name);
 }
 
 // ---------------- procedural planet textures ----------------
@@ -1419,7 +1459,7 @@ function draw() {
   ctx.save();
   const booking = Math.hypot(P.vx, P.vy) * warp;
   chroma += ((P.on || paused ? 0 : clamp((booking - 1500) / 1300, 0, 1) * cam.rip) - chroma) * 0.08;   // top speed → chromatic warp
-  const shk = cam.rip * Math.min(1, warp / T.warpMax) * 1.6 + cam.shake + chroma * 2.5;
+  const shk = calm ? 0 : cam.rip * Math.min(1, warp / T.warpMax) * 1.6 + cam.shake + chroma * 2.5;   // reduced motion: no shake
   ctx.translate(W / 2 + Math.sin(simT * 61) * shk, H / 2 + Math.cos(simT * 47) * shk);
   ctx.scale(cam.zoom, cam.zoom); ctx.rotate(-cam.rot); ctx.translate(-cam.x, -cam.y);
   const px = 1 / cam.zoom;
@@ -1711,7 +1751,7 @@ function draw() {
     const mark = (dx, dy, lab, col) => {
       const mx = P.x + dx * R0, my = P.y + dy * R0;
       ctx.strokeStyle = col; ctx.lineWidth = 1.5 * px; ctx.beginPath(); ctx.arc(mx, my, 4.5 * px, 0, TAU); ctx.stroke();
-      ctx.fillStyle = col; ctx.font = `bold ${11 * px}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = col; ctx.font = `bold ${11 * px * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(lab, mx + dx * 11 * px, my + dy * 11 * px);
     };
     mark(ax.pro[0], ax.pro[1], 'W', withAlpha(TH.good, 0.85));
@@ -1732,20 +1772,20 @@ function draw() {
   ctx.restore();
 
   // screen space: labels
-  ctx.font = '12px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
+  ctx.font = `${12 * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center';
   for (const b of bodies) {
     if (!b.name) continue;
     const [sx, sy] = w2s(b.x, b.y);
     ctx.fillStyle = b === tgt ? '#ffd28a' : withAlpha(b.color, 0.8); ctx.fillText(b.name + (b.gas ? ' ◌' : ''), sx, sy + b.r * cam.zoom + 17);
   }
-  ctx.font = 'bold 12px ui-monospace,Menlo,monospace';
+  ctx.font = `bold ${12 * fontMult}px ui-monospace,Menlo,monospace`;
   for (const [x, y, text, color] of fcLabels) {
     const [sx, sy] = w2s(x, y);
     ctx.fillStyle = 'rgba(4,5,11,0.6)'; const wdt = ctx.measureText(text).width; ctx.fillRect(sx - wdt / 2 - 4, sy - 25, wdt + 8, 16);
     ctx.fillStyle = color; ctx.fillText(text, sx, sy - 13);
   }
   // popups
-  ctx.font = 'bold 13px ui-monospace,Menlo,monospace';
+  ctx.font = `bold ${13 * fontMult}px ui-monospace,Menlo,monospace`;
   for (const p of popups) {
     const [sx, sy] = w2s(p.x, p.y);
     ctx.globalAlpha = clamp(2.2 - p.t, 0, 1); ctx.fillStyle = p.color; ctx.fillText(p.text, sx, sy - 24 - p.t * 30);
@@ -1778,9 +1818,9 @@ function draw() {
     wv.addColorStop(0, 'rgba(0,0,0,0)'); wv.addColorStop(1, withAlpha(TH.accent2, 0.22 * cam.rip));
     ctx.fillStyle = wv; ctx.fillRect(0, 0, W, H);
   }
-  if (chroma > 0.04) chromaPass(chroma);   // split + jitter the colour channels of the game view (panels stay crisp)
+  if (chroma > 0.04 && !calm) chromaPass(chroma);   // split + jitter the colour channels of the game view (panels stay crisp)
   if (TH.labels) {   // blueprint distance labels
-    ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.fillStyle = `rgba(${TH.gridCol},0.6)`;
+    ctx.font = `${10 * fontMult}px ui-monospace,Menlo,monospace`; ctx.fillStyle = `rgba(${TH.gridCol},0.6)`;
     for (let r = gstep; r < sysR * 1.15; r += gstep) { const [sx, sy] = w2s(hub.x + r * 0.7071, hub.y - r * 0.7071); ctx.fillText(r.toLocaleString(), sx, sy); }
   }
   const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
@@ -1798,7 +1838,7 @@ function draw() {
       ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
       ctx.fillStyle = '#ffd28a'; ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill();
       ctx.restore();
-      ctx.fillStyle = '#ffd28a'; ctx.font = '11px ui-monospace,Menlo,monospace';
+      ctx.fillStyle = '#ffd28a'; ctx.font = `${11 * fontMult}px ui-monospace,Menlo,monospace`;
       ctx.fillText(tb.name, ex - Math.cos(a) * 26, ey - Math.sin(a) * 18 + 4);
     }
   }
@@ -1830,7 +1870,7 @@ function drawMinimap(tgt) {
   const [px0, py0] = m(P.x, P.y);
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px0, py0, 3, 0, TAU); ctx.fill();
   ctx.restore();
-  ctx.fillStyle = 'rgba(207,227,255,0.45)'; ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(207,227,255,0.45)'; ctx.font = `${10 * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center';
   ctx.fillText('SYSTEM · M hide · Z overview', cx, cy - R - 12);
 }
 
@@ -2174,9 +2214,39 @@ function frame(now) {
   updateForecast();
   draw();
   if ((hudT -= dt) <= 0) { updateHud(); hudT = 0.1; }
-  requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+
+// Arcade.loop owns rAF under the launcher: it cancels while the game is hidden/suspended and resumes cleanly.
+if (ARC && ARC.loop) ARC.loop(() => frame(performance.now())).start();
+else { const raf = now => { frame(now); requestAnimationFrame(raf); }; requestAnimationFrame(raf); }
+
+// ---------------- Paul's Arcade lifecycle ----------------
+function hydrate() {   // (re)read saved state: on SDK ready (framed storage arrives async) and after a save import
+  GHOSTS = STORE.get('ghosts', {}) || {};
+  SND.on = STORE.get('sound', 'on') !== 'off'; applyVolume();
+  const t = STORE.get('theme', null);
+  if (t && THEMES[t] && !new URLSearchParams(location.search || '').get('theme')) setTheme(t);
+}
+if (ARC) {
+  ARC.ready.then(hydrate);
+  ARC.onStateReplaced(hydrate);
+  ARC.onSettingsChange(() => { fontMult = PREF.fontScale(); calm = PREF.reducedMotion(); applyVolume(); });
+  ARC.onSuspend(() => {
+    for (const k in keys) keys[k] = false;   // a key held while switching away must not stay stuck
+    if (SND.ctx && SND.ctx.state === 'running') SND.ctx.suspend();
+  });
+  ARC.onResume(() => { last = performance.now(); acc = 0; if (SND.ctx && SND.ctx.state === 'suspended') SND.ctx.resume(); });
+}
+</script>
+<!-- Offline play for the installed PWA. Loopback-guarded so local edits are never masked by a stale cache;
+     fire-and-forget so a failure (or the SDK's inert stub inside launcher frames) never breaks boot. -->
+<script>
+  if ('serviceWorker' in navigator && !/^(127\.|localhost$|0\.0\.0\.0$|::1$)/.test(location.hostname)) {
+    window.addEventListener('load', () => {
+      try { navigator.serviceWorker.register('sw.js', { scope: '/orbital/' }).catch((err) => console.warn('SW registration failed:', err)); }
+      catch (err) { console.warn('SW registration failed:', err); }
+    });
+  }
 </script>
 </body>
 </html>

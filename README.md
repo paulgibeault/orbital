@@ -17,6 +17,15 @@ Press **B** in game for Flight School.
   **Q** switch catch target · hold **F** to warp (auto-brakes before action) · **Esc** cancels a charge
 - **Z** overview · **M** minimap · **P** forecast · **T** theme · **H** all keys
 
+## Paul's Arcade / PWA
+Published at **https://paulgibeault.github.io/orbital/** and listed in [Paul's Arcade](https://paulgibeault.github.io/#app=orbital).
+- Loads the arcade SDK (`/arcade-sdk.js`); saves (ghosts, theme, sound) live under `arcade.v1.orbital.*` via `Arcade.state`.
+  Without the SDK (`node server.js`) the game falls back to plain `localStorage` and posts play logs to `logs/`.
+- Installable PWA: `manifest.json` + `sw.js` (scoped to `/orbital/`; CI owns `APP_VERSION` and generates the precache list).
+- Respects launcher font scale, reduced motion (no shake / chromatic warp) and volume; pauses and mutes when suspended.
+- Deploys through the fleet pipeline (`.github/workflows/pages.yml`) on merge to `main`; `npm test` runs the same gates.
+- Single visual aesthetic per theme (`T` cycles); the launcher's light/dark theme is intentionally not followed.
+
 ## Dev
 - `DESIGN.md`: design decisions and playtest findings.
 - `tools/`: headless harness (`stub.js`) and regression and sim checks, e.g. `node tools/t_regress.js index.html`;
