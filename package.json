@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node tools/verify-artifact.mjs && node --test 'tests/*.test.mjs' && node tools/t_regress.js index.html",
+    "test": "node tools/verify-artifact.mjs && node --test 'tests/*.test.mjs' && node tools/t_regress.js index.html && node tools/t_touch.js index.html",
     "stage": "node tools/stage.mjs dist"
   }
 }
