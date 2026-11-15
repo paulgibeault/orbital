@@ -1,0 +1,14 @@
+{
+  "name": "Orbital Courier",
+  "short_name": "Orbital",
+  "description": "Slingshot parcels across a living solar system. Real gravity, rewarded flybys.",
+  "scope": "/orbital/",
+  "start_url": "/orbital/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#04050b",
+  "theme_color": "#04050b",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
