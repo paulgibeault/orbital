@@ -13,7 +13,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const send = (method, params = {}) => new Promise(r => { const i = ++id; pending[i] = r; sock.send(JSON.stringify({ id: i, method, params })); });
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
   await send('Page.enable'); await send('Runtime.enable'); await send('Page.navigate', { url }); await sleep(1500);
-  const K = { Space: [' ', 32], Enter: ['Enter', 13], Escape: ['Escape', 27], KeyW: ['w', 87], KeyS: ['s', 83], KeyD: ['d', 68], KeyA: ['a', 65], KeyF: ['f', 70], KeyZ: ['z', 90], ArrowRight: ['ArrowRight', 39], ShiftLeft: ['Shift', 16], KeyT: ['t', 84], KeyQ: ['q', 81], KeyN: ['n', 78], KeyB: ['b', 66] };
+  const K = { Space: [' ', 32], Enter: ['Enter', 13], Escape: ['Escape', 27], KeyW: ['w', 87], KeyS: ['s', 83], KeyD: ['d', 68], KeyA: ['a', 65], KeyF: ['f', 70], KeyZ: ['z', 90], ArrowRight: ['ArrowRight', 39], ShiftLeft: ['Shift', 16], KeyT: ['t', 84], KeyQ: ['q', 81], KeyN: ['n', 78], KeyB: ['b', 66], KeyR: ['r', 82] };
   const key = async (type, code) => send('Input.dispatchKeyEvent', { type, code, key: K[code][0], windowsVirtualKeyCode: K[code][1] });
   for (const step of script.split(' ')) {
     const i0 = step.indexOf(':'), a = step.slice(0, i0), b = step.slice(i0 + 1);

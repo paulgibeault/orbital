@@ -114,12 +114,16 @@
   #tbTgt{right:calc(34px + env(safe-area-inset-right));bottom:calc(134px + env(safe-area-inset-bottom));width:52px;height:52px;font-size:9px}
   #tbCancel{right:calc(198px + env(safe-area-inset-right));bottom:calc(30px + env(safe-area-inset-bottom));width:46px;height:46px;font-size:18px;color:var(--bad);display:none}
   body.can-cancel #tbCancel{display:flex}
+  #tbRew{right:calc(180px + env(safe-area-inset-right));bottom:calc(104px + env(safe-area-inset-bottom));width:54px;height:54px;font-size:18px;color:#9fd8ff}
+  #tbRew span{font-size:8px;letter-spacing:.06em;color:var(--ink)}
+  body.on-ground #tbRew{display:none}
   /* left-handed (launcher setting): buttons on the left, stick on the right */
   body.lefty #tbGo{right:auto;left:calc(22px + env(safe-area-inset-left))}
   body.lefty #tbGear{right:auto;left:calc(128px + env(safe-area-inset-left))}
   body.lefty #tbWarp{right:auto;left:calc(112px + env(safe-area-inset-left))}
   body.lefty #tbTgt{right:auto;left:calc(34px + env(safe-area-inset-left))}
   body.lefty #tbCancel{right:auto;left:calc(198px + env(safe-area-inset-left))}
+  body.lefty #tbRew{right:auto;left:calc(180px + env(safe-area-inset-left))}
   body.lefty.touch #instr{left:auto;right:calc(12px + env(safe-area-inset-right))}
   body.on-ground #tbWarp,body.on-ground #tbTgt,body.on-ground #tbGear{opacity:.35}
   #tbMenu{right:calc(14px + env(safe-area-inset-right));top:calc(14px + env(safe-area-inset-top));width:46px;height:46px;border-radius:14px;font-size:20px}
@@ -202,6 +206,7 @@
   <button id="tbWarp" class="tb" data-key="KeyF" data-hold="1" type="button">WARP</button>
   <button id="tbTgt" class="tb" data-key="KeyQ" type="button">TARGET</button>
   <button id="tbCancel" class="tb" data-key="Escape" type="button">✕</button>
+  <button id="tbRew" class="tb" data-key="KeyR" data-hold="1" type="button">⟲<span>REWIND</span></button>
 </div>
 <script>
 'use strict';
@@ -265,7 +270,8 @@ const rand = (a, b) => a + Math.random() * (b - a);
 // ---------------- tuning ----------------
 const T = {
   G: 1, soft2: 25,
-  walk: 170, jumpMin: 90, jumpMax: 340, chargeTime: 0.7,
+  walk: 170, walkTurn: 2.2, jumpMin: 90, jumpMax: 340, chargeTime: 1.2,   // walkTurn: max rad/s around a world (small moons were 5 = twitchy)
+  aimTilt: 1.1, aimRate: 1.2, powRate: 0.55, rewindRate: 3,   // while charging: lean the launch ±63° (rad/s), set power by hand (/s); R rewinds at 3×
   kick: 90, kickMax: 2, kickRecharge: 5, kickUnlimited: true, kickMinPow: 0.2, kickChargeTime: 0.8,   // boost never runs out; hold Space in flight: 20%→100% power
   // ANCHOR (Shift): a tether to one world within range. Ring shows which; Q/Tab switches; locked while held.
   anchorRange: 650, anchorAccel: 240, anchorDamp: 0.8, anchorRamp: 0.35, anchorTargetBias: 0.5, anchorKeep: 1.25,
@@ -429,7 +435,7 @@ function gravAt(x, y, out) {
 const P = {
   x: 0, y: 0, vx: 0, vy: 0, on: null, ang: -Math.PI / 2, walkV: 0,
   charging: false, charge: 0, kicks: T.kickMax, kickT: 0, reach: null, anchor: null, anchorPick: null, anchorLock: false, reachT: 0, lastBody: null, pass: null, skipBody: null, chain: 0, Eprev: 0,
-  fullHold: 0, grazes: new Set(), orbBody: null, orbAng: 0, orbSwept: 0, trail: [],
+  fullHold: 0, tilt: 0, chargeManual: false, grazes: new Set(), orbBody: null, orbAng: 0, orbSwept: 0, trail: [],
 };
 
 // ---------------- game state ----------------
@@ -541,6 +547,7 @@ function land(b) {
   P.pass = null; P.chain = 0; P.kickCharging = false;
   if (COMBO.hits) comboEnd('landed');
   if (b.comet) { addStyle(15, 'COMET RIDE ☄ ' + b.name, '#bfe9ff'); toast(`☄ Riding ${b.name} — jump off at its closest pass for a huge boost`, 'gain'); logEv('comet_ride', { comet: b.name }); }
+  REW.snaps.length = 0; P.tilt = 0;
   P.on = b; P.ang = a; P.lastBody = b; P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.kicks = T.kickMax; P.kickT = 0;
   P.walkV = clamp((rx * -Math.sin(a) + ry * Math.cos(a)) * 0.4, -T.walk, T.walk);
   P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
@@ -576,13 +583,16 @@ function land(b) {
   }
 }
 
+// Launch direction: straight up from where you stand, leaned by your aim (A/D or the stick while charging).
+function launchDir(a = P.ang, t = P.tilt) { return [Math.cos(a + t), Math.sin(a + t)]; }
 function jump() {
   const b = P.on, a = P.ang, s = lerp(T.jumpMin, T.jumpMax, P.charge);
-  const ux = Math.cos(a), uy = Math.sin(a);
-  P.vx = b.vx + ux * s - uy * P.walkV;
-  P.vy = b.vy + uy * s + ux * P.walkV;
+  const ux = Math.cos(a), uy = Math.sin(a), [lx, ly] = launchDir();
+  REW.snaps = [rewSnap(true)];   // rewinding all the way puts you back here, aim and all
+  P.vx = b.vx + lx * s - uy * P.walkV;
+  P.vy = b.vy + ly * s + ux * P.walkV;
   P.x += ux * 1.5; P.y += uy * 1.5;
-  logEv('jump', { from: bname(b), charge: +P.charge.toFixed(2), speed: s | 0, walkV: P.walkV | 0,
+  logEv('jump', { from: bname(b), charge: +P.charge.toFixed(2), speed: s | 0, walkV: P.walkV | 0, tilt: +P.tilt.toFixed(2), manual: P.chargeManual ? 1 : 0,
     dwell: +(simT - LOG.landT).toFixed(2), fullHold: +P.fullHold.toFixed(2) });
   LOG.flight = { t0: simT, from: bname(b), charge: +P.charge.toFixed(2), launch: s | 0, maxSun: 0, kicks: 0, heavy: 0,
     airSteer: 0, extraSpace: 0, grazes: 0, orbits: 0 };
@@ -714,10 +724,57 @@ function respawn(msg) {
   if (msg) logEv('respawn', { reason: msg });
   const b = P.lastBody && bodies.includes(P.lastBody) ? P.lastBody : LEVELS[level].start();
   P.pass = null; P.chain = 0;
+  REW.snaps.length = 0; P.tilt = 0;
   P.on = b; P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.ang = rand(0, TAU); P.walkV = 0; P.kicks = T.kickMax; P.kickT = 0; P.trail.length = 0;
   P.grazes.clear(); P.orbBody = null; P.orbSwept = 0;
   if (job && job.state === 'carry') { job.state = 'wait'; popup(b.x, b.y, 'parcel returned to ' + job.from.name, '#ff9c9c'); }
   if (msg) popup(b.x, b.y - b.r - 30, msg, '#ff9c9c');
+}
+
+// ---------------- rewind ----------------
+// Hold R to run the current flight backwards. The worlds ride fixed rails (placeBodies(simT)), so turning back the
+// clock turns back the whole sky with you. Go all the way and you're standing where you launched, with the same aim,
+// in the same launch window. Let go anywhere to fly on from that moment. The physics forward is untouched.
+const REW = { snaps: [], on: false, pad: false, n: 0, from: 0, debt: 0 };
+function rewSnap(ground) {
+  return { t: simT, ground, on: P.on, ang: P.ang, tilt: P.tilt, x: P.x, y: P.y, vx: P.vx, vy: P.vy, kicks: P.kicks, kickT: P.kickT,
+    pass: P.pass && { ...P.pass }, chain: P.chain, orbBody: P.orbBody, orbAng: P.orbAng, orbSwept: P.orbSwept, grazes: [...P.grazes],
+    credits, stardust, combo: { ...COMBO }, jobRef: job,
+    job: job && { state: job.state, style: job.style, slings: job.slings, kicks: job.kicks, perfect: job.perfect, express: job.express } };
+}
+function rewApply(s) {
+  simT = s.t; placeBodies(simT);
+  Object.assign(P, { x: s.x, y: s.y, vx: s.vx, vy: s.vy, kicks: s.kicks, kickT: s.kickT, pass: s.pass && { ...s.pass }, chain: s.chain,
+    orbBody: s.orbBody, orbAng: s.orbAng, orbSwept: s.orbSwept, tilt: s.tilt, kickCharging: false });
+  P.grazes = new Set(s.grazes);
+  credits = s.credits; stardust = s.stardust; Object.assign(COMBO, s.combo);
+  if (job && job === s.jobRef && s.job) {
+    Object.assign(job, s.job);
+    if (job.rec) { const t = simT - job.t0; while (job.rec.length && job.rec[job.rec.length - 1][0] > t) job.rec.pop(); job.recT = job.rec.length ? job.rec[job.rec.length - 1][0] : -1; }
+  }
+  if (s.ground) {   // back on the launch pad: same spot, same aim — try that jump again
+    P.on = s.on; P.ang = s.ang; P.walkV = 0; P.charging = false; P.charge = 0; P.chargeManual = false; P.fullHold = 0;
+    P.anchor = null; P.anchorPick = null; P.anchorLock = false; P.trail.length = 0; P.skipBody = null;
+    LOG.flight = null; LOG.landT = simT;
+    step(0);   // re-seat on the surface
+  }
+  P.Eprev = helioE();
+}
+function rewindTick(dt) {
+  if (keys.rew && REW.on && REW.pad && P.on) return true;   // back on the pad: the clock waits until you let go of R
+  if (!keys.rew || paused || P.on || !REW.snaps.length) {
+    if (REW.on) { REW.on = false; logEv('rewind', { from: +REW.from.toFixed(2), to: +simT.toFixed(2), ground: P.on ? 1 : 0 }); }
+    return false;
+  }
+  if (!REW.on) { REW.on = true; REW.pad = false; REW.from = simT; REW.debt = 0; popup(P.x, P.y, '⟲ rewinding', '#9fd8ff'); sfx.cancel(); }
+  REW.debt += dt * T.rewindRate;   // sim seconds owed; snapshots are 0.05 s apart, so carry the remainder
+  const S = REW.snaps, t0 = simT;
+  while (S.length > 1 && S[S.length - 1].t > t0 - REW.debt + 0.025) S.pop();   // the nearest snapshot to where we owe
+  const s = S[S.length - 1];
+  REW.debt -= t0 - s.t;
+  rewApply(s);
+  if (s.ground) { S.length = 0; REW.pad = true; popup(P.x, P.y, 'back on ' + bname(P.on) + ' — same launch window', '#9fd8ff'); }
+  return true;
 }
 
 // ---------------- seeds (build layer) ----------------
@@ -776,9 +833,10 @@ function step(dt) {
 
   if (P.on) {
     const b = P.on, rr = b.r + T.playerR;
-    const dir = (keys.right || keys.d ? 1 : 0) - (keys.left || keys.a ? 1 : 0);
-    P.walkV += (dir * T.walk - P.walkV) * Math.min(1, dt * 12);
-    P.ang += clamp(P.walkV / rr, -5, 5) * dt;
+    // while charging, A/D aim the launch instead of walking (see frame()); you plant your feet
+    const dir = P.charging ? 0 : (keys.right || keys.d ? 1 : 0) - (keys.left || keys.a ? 1 : 0);
+    P.walkV += (dir * Math.min(T.walk, T.walkTurn * rr) - P.walkV) * Math.min(1, dt * 12);
+    P.ang += clamp(P.walkV / rr, -T.walkTurn, T.walkTurn) * dt;
     const ux = Math.cos(P.ang), uy = Math.sin(P.ang);
     P.x = b.x + rr * ux; P.y = b.y + rr * uy;
     P.vx = b.vx - uy * P.walkV; P.vy = b.vy + ux * P.walkV;
@@ -816,6 +874,7 @@ function step(dt) {
   } else P.reachT = 0;
   P.vx += ax * dt; P.vy += ay * dt;
   P.x += P.vx * dt; P.y += P.vy * dt;
+  if (REW.snaps.length && ++REW.n % 12 === 0) { REW.snaps.push(rewSnap(false)); if (REW.snaps.length > 7200) REW.snaps.splice(1, 1); }   // 20 Hz, ≤6 min
   if (P.kicks < T.kickMax && (P.kickT += dt) >= T.kickRecharge) { P.kicks++; P.kickT = 0; }
   if (LOG.flight) { LOG.flight.maxSun = Math.max(LOG.flight.maxSun, Math.hypot(P.x, P.y)); if (keys.heavy) LOG.flight.heavy += dt; }
 
@@ -1013,8 +1072,8 @@ function updateForecast() {
   if (!forecastOn || paused) { FC.main = FC.kick = FC.osc = null; return; }
   if (P.on) {
     if (!P.charging) { FC.main = FC.kick = FC.osc = null; return; }
-    const b = P.on, a = P.ang, sJ = lerp(T.jumpMin, T.jumpMax, P.charge), ux = Math.cos(a), uy = Math.sin(a);
-    const lvx = b.vx + ux * sJ - uy * P.walkV, lvy = b.vy + uy * sJ + ux * P.walkV;
+    const b = P.on, a = P.ang, sJ = lerp(T.jumpMin, T.jumpMax, P.charge), ux = Math.cos(a), uy = Math.sin(a), [lx, ly] = launchDir();
+    const lvx = b.vx + lx * sJ - uy * P.walkV, lvy = b.vy + ly * sJ + ux * P.walkV;
     FC.main = forecast(P.x + ux * 1.5, P.y + uy * 1.5, lvx, lvy, T.forecastH, false, b);
     const ex = FC.main.exit;   // orbit you'll actually have after climbing out of this world's gravity
     FC.osc = ex ? oscOrbit(ex.x, ex.y, ex.vx, ex.vy) : null;
@@ -1191,9 +1250,9 @@ function s2w(sx, sy) {
 }
 
 // ---------------- input ----------------
-const keys = { left: false, right: false, up: false, down: false, w: false, a: false, s: false, d: false, heavy: false, ff: false };
+const keys = { left: false, right: false, up: false, down: false, w: false, a: false, s: false, d: false, heavy: false, ff: false, rew: false };
 let minimapOn = true;
-const KEYMAP = { ArrowLeft: 'left', KeyA: 'a', ArrowRight: 'right', KeyD: 'd', ArrowUp: 'up', KeyW: 'w', ArrowDown: 'down', KeyS: 's', ShiftLeft: 'heavy', ShiftRight: 'heavy', KeyF: 'ff' };
+const KEYMAP = { ArrowLeft: 'left', KeyA: 'a', ArrowRight: 'right', KeyD: 'd', ArrowUp: 'up', KeyW: 'w', ArrowDown: 'down', KeyS: 's', ShiftLeft: 'heavy', ShiftRight: 'heavy', KeyF: 'ff', KeyR: 'rew' };
 // Keyboard and touch share one path: touch buttons call onKeyDown/onKeyUp with synthetic events (vkey).
 addEventListener('keydown', e => { if (touchMode) setTouchMode(false); onKeyDown(e); });
 addEventListener('keyup', e => onKeyUp(e));
@@ -1211,7 +1270,7 @@ function onKeyDown(e) {
     if (e.code === 'Space' && P.kicks <= 0) LOG.flight.extraSpace++;
   }
   if (e.code === 'Space' && !panelOpen()) {
-    if (P.on) { P.charging = true; P.charge = 0; }
+    if (P.on) { P.charging = true; P.charge = 0; P.chargeManual = false; }
     else if (P.kicks > 0) { P.kickCharging = true; P.kickCharge = T.kickMinPow; }   // hold to build power, release to fire
   }
   if (e.code === 'KeyL') downloadLog();
@@ -1310,7 +1369,7 @@ function tl(h) {
     .replace(/(Walk \(?)<kbd>A<\/kbd>\s*\/\s*<kbd>D<\/kbd>/g, '$1<kbd>◀ stick ▶</kbd>')
     .replace(/<kbd>Q<\/kbd>\/<kbd>Tab<\/kbd>/g, '<kbd>TARGET</kbd>')
     .replace(/<kbd>([^<]+)<\/kbd>/g, (m, k) => {
-      const map = { '→': 'tap', '←': 'tap left', Space: go, Shift: 'GEAR', F: 'WARP', Q: 'TARGET', Tab: 'TARGET', Esc: '✕', Enter: 'tap', B: '☰ School',
+      const map = { '→': 'tap', '←': 'tap left', Space: go, Shift: 'GEAR', F: 'WARP', Q: 'TARGET', Tab: 'TARGET', R: '⟲ REWIND', Esc: '✕', Enter: 'tap', B: '☰ School',
         Z: '☰ Overview', G: '☰ Assist', M: '☰ Map', P: '☰ Forecast', T: '☰ Theme', N: '☰ Sound', W: 'stick → PRO', S: 'stick → RETRO',
         A: 'stick → IN', D: 'stick → OUT' };
       return map[k] ? `<kbd>${map[k]}</kbd>` : m;
@@ -1349,7 +1408,14 @@ function drawStick() {
 function touchTick() {   // per frame: the stick walks on the ground, aims in flight
   if (STICK.id === null) { if (!P.kickCharging) touchAim = null; return; }
   const m = Math.hypot(STICK.vx, STICK.vy);
-  if (P.on) { keys.left = STICK.vx < -0.3; keys.right = STICK.vx > 0.3; touchAim = null; }
+  if (P.on && P.charging) {   // holding ◉: the stick is a slingshot — point where you want to go, push further for more power
+    keys.left = keys.right = false; touchAim = null;
+    if (m > 0.3) {
+      const c = Math.cos(cam.rot), s = Math.sin(cam.rot), wx = STICK.vx * c - STICK.vy * s, wy = STICK.vx * s + STICK.vy * c;
+      P.tilt = clamp(angDiff(Math.atan2(wy, wx), P.ang), -T.aimTilt, T.aimTilt);
+      P.chargeManual = true; P.charge = clamp((m - 0.3) / 0.65, 0, 1);
+    }
+  } else if (P.on) { keys.left = STICK.vx < -0.3; keys.right = STICK.vx > 0.3; touchAim = null; }
   else { keys.left = keys.right = false; touchAim = m > 0.25 ? [STICK.vx, STICK.vy] : (P.kickCharging ? touchAim : null); }
 }
 function stickMove(e) {
@@ -2039,6 +2105,22 @@ function draw() {
   if (P.charging) {
     ctx.strokeStyle = P.charge >= 1 ? '#ffd28a' : '#cfe3ff'; ctx.lineWidth = 2.5 * px;
     ctx.beginPath(); ctx.arc(P.x, P.y, pr + 6, -Math.PI / 2, -Math.PI / 2 + TAU * P.charge); ctx.stroke();
+    // launch arrow: where and how hard you'll go. Faint ticks mark how far you can lean it.
+    if (P.on) {
+      const [lx, ly] = launchDir(), r0 = pr + 10, len = (14 + 46 * P.charge) * px, col = P.charge >= 1 ? '#ffd28a' : '#9fd8ff';
+      ctx.strokeStyle = 'rgba(159,216,255,0.35)'; ctx.lineWidth = 1.5 * px;
+      for (const e of [-T.aimTilt, T.aimTilt]) {
+        const [ex, ey] = launchDir(P.ang, e);
+        ctx.beginPath(); ctx.moveTo(P.x + ex * r0, P.y + ey * r0); ctx.lineTo(P.x + ex * (r0 + 10 * px), P.y + ey * (r0 + 10 * px)); ctx.stroke();
+      }
+      ctx.strokeStyle = col; ctx.lineWidth = 3 * px;
+      const tx = P.x + lx * (r0 + len), ty = P.y + ly * (r0 + len);
+      ctx.beginPath(); ctx.moveTo(P.x + lx * r0, P.y + ly * r0); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.save(); ctx.translate(tx, ty); ctx.rotate(Math.atan2(ly, lx)); ctx.fillStyle = col;
+      ctx.beginPath(); ctx.moveTo(8 * px, 0); ctx.lineTo(-3 * px, -6 * px); ctx.lineTo(-3 * px, 6 * px); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.fillStyle = col; ctx.font = `bold ${11 * px * fontMult}px ui-monospace,Menlo,monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.round(P.charge * 100)}%`, tx + lx * 16 * px, ty + ly * 16 * px); ctx.textBaseline = 'alphabetic';
+    }
   }
   if (!P.on) for (let i = 0; i < P.kicks; i++) {
     const ka = up + Math.PI + (i - (P.kicks - 1) / 2) * 0.6;
@@ -2272,7 +2354,8 @@ const GUIDE = [
       <text x="168" y="16" class="acc">target now</text><text x="20" y="70" class="ok">you both arrive</text><text x="20" y="84" class="ok">here together</text>`),
     html: `Reaching the target's <i>orbit</i> isn't enough — the target has to <b>be there</b> when you arrive. It keeps moving while you fly.<br><br>
       <ul><li>On the ground, <b>hold <kbd>Space</kbd></b> at full charge: the forecast shows your launch path and closest approach live.</li>
-      <li>Walk (<kbd>A</kbd>/<kbd>D</kbd>) to change the launch angle. Your world turns under you — wait.</li>
+      <li>While holding, <kbd>A</kbd>/<kbd>D</kbd> <b>lean your launch</b> (up to ~60° either way) and <kbd>W</kbd>/<kbd>S</kbd> set the <b>power</b> by hand. Your world turns under you — wait.</li>
+      <li>Bad flight? <b>Hold <kbd>R</kbd> to rewind</b> it — all the way back puts you on the launch pad in the same window.</li>
       <li><b>Release when the line turns <span class="ok">green ✓</span>.</b></li>
       <li>In flight, small <kbd>W</kbd>/<kbd>S</kbd> kicks change your timing. <kbd>F</kbd> fast-forwards the wait.</li></ul>` },
   { t: 'Catching a world on your own orbit',
@@ -2342,11 +2425,12 @@ function coachText() {
   if (P.on) {
     if (P.on === tgt) return job.state === 'wait' ? `Walk <kbd>A</kbd> / <kbd>D</kbd> to the parcel ▣ on ${tgt.name}.` : '';
     if (!P.charging) return `Hold <kbd>Space</kbd> to preview your launch to <b>${tgt.name}</b> — release when the closest-approach line turns <span class="ok">green</span>.`;
-    if (FC.main && !FC.main.exit) return `This jump falls back onto ${P.on.name} — hold <kbd>Space</kbd> longer for more charge.`;
+    const aimH = touchMode ? 'point the stick where you want to go (further = more power)' : 'lean it with <kbd>A</kbd>/<kbd>D</kbd>, power with <kbd>W</kbd>/<kbd>S</kbd>';
+    if (FC.main && !FC.main.exit) return `This jump falls back onto ${P.on.name} — more power: ${touchMode ? 'push the stick further' : 'keep holding, or <kbd>W</kbd>'}.`;
     if (ca && ca.d <= T.anchorRange) return `<span class="ok">✓ Release now</span> — this launch passes ${fmt(ca.d)} from ${tgt.name} in ${ca.t.toFixed(0)}s.`;
-    if (osc && osc.Ap < band[0]) return `This jump tops out at <b>Ap ${fmt(osc.Ap)}</b>; ${tgt.name} orbits at ${fmt(tR)}. Not enough energy — ${sling}, or kick <kbd>W</kbd> right after launch.`;
-    if (osc && osc.Pe > band[1]) return `This launch never falls to ${tgt.name}'s orbit (Pe ${fmt(osc.Pe)}). Launch from the side where you'd jump <b>against</b> ${P.on.name}'s motion.`;
-    return `Your orbit reaches ${tgt.name}'s — now it's <b>timing</b>. Keep holding; walk to change angle; release on <span class="ok">green</span> · <kbd>Esc</kbd> cancels.`;
+    if (osc && osc.Ap < band[0]) return `This jump tops out at <b>Ap ${fmt(osc.Ap)}</b>; ${tgt.name} orbits at ${fmt(tR)}. More power, lean the launch <b>with</b> ${P.on.name}'s motion, or ${sling}.`;
+    if (osc && osc.Pe > band[1]) return `This launch never falls to ${tgt.name}'s orbit (Pe ${fmt(osc.Pe)}). Lean it <b>against</b> ${P.on.name}'s motion — ${aimH}.`;
+    return `Your orbit reaches ${tgt.name}'s — now it's <b>timing</b>. Keep holding and ${aimH}; release on <span class="ok">green</span> · <kbd>Esc</kbd> cancels.`;
   }
   if (P.kickCharging && FC.kick && FC.kick.ca) {
     const kc = FC.kick.ca;
@@ -2359,14 +2443,14 @@ function coachText() {
   if (ca && ca.d <= T.anchorRange) return `<span class="ok">✓ On course</span> — ${tgt.name} passes ${fmt(ca.d)} away in ${ca.t.toFixed(0)}s. Hold <kbd>F</kbd> to get there sooner, <kbd>Shift</kbd> when it's ringed.`;
   const ref = refBody(), kick = P.kicks > 0 || T.kickUnlimited ? '' : ' (kick recharging)';
   if (ref !== hub && ref !== tgt) return `You're inside <b>${ref.name}</b>'s pull — a <kbd>W</kbd> kick here (you're fast) is extra strong${kick}.`;
-  if (osc && osc.Ap < band[0]) return `Your <b>Ap ${fmt(osc.Ap)}</b> falls short of ${tgt.name} (${fmt(tR)}). Kick <kbd>W</kbd> — best at <b>Pe</b>${kick} — or ${sling}.`;
-  if (osc && osc.Pe > band[1]) return `Your <b>Pe ${fmt(osc.Pe)}</b> stays above ${tgt.name} (${fmt(tR)}). Kick <kbd>S</kbd> — best at <b>Ap</b>${kick} — or pass in front of a world.`;
+  if (osc && osc.Ap < band[0]) return `Your <b>Ap ${fmt(osc.Ap)}</b> falls short of ${tgt.name} (${fmt(tR)}). Kick <kbd>W</kbd> — best at <b>Pe</b>${kick} — or ${sling}. Or hold <kbd>R</kbd>: rewind and relaunch.`;
+  if (osc && osc.Pe > band[1]) return `Your <b>Pe ${fmt(osc.Pe)}</b> stays above ${tgt.name} (${fmt(tR)}). Kick <kbd>S</kbd> — best at <b>Ap</b>${kick} — or pass in front of a world. Or hold <kbd>R</kbd>: rewind and relaunch.`;
   const ph = FC.phase;
   if (ph && ph.closing && ph.eta < 2.5 * ph.Ty) return `${tgt.name} is ${ph.deg.toFixed(0)}° ${ph.ahead ? 'ahead' : 'behind'} on your orbit and you're closing ~${ph.lapGainDeg.toFixed(0)}°/lap — in reach in ~${fmt(ph.eta)}s. Hold <kbd>F</kbd>.`;
   if (ph && ph.ahead) return `${tgt.name} is <b>${ph.deg.toFixed(0)}° ahead</b> on your orbit. Speeding up won't catch it — a higher orbit is <i>slower</i>. <b>Slow down</b>: hold <kbd>S</kbd> + <kbd>Space</kbd>, watch the dashed path, release when it turns <span class="ok">green</span>. You'll drop lower, lap faster, and meet it${kick}.`;
   if (ph) return `${tgt.name} is <b>${ph.deg.toFixed(0)}° behind</b> you. Let it catch up: hold <kbd>W</kbd> + <kbd>Space</kbd> to rise into a slower orbit; release when the dashed path turns <span class="ok">green</span>${kick}.`;
   if (ca) return `Your orbit crosses ${tgt.name}'s but misses by <b>${fmt(ca.d)}</b> — timing. Small <kbd>W</kbd>/<kbd>S</kbd> kicks shift your arrival; watch the dashed line${kick}.`;
-  return `Coasting. Hold <kbd>F</kbd> to fast-forward · <kbd>Z</kbd> for the whole system.`;
+  return `Coasting. Hold <kbd>F</kbd> to fast-forward · <kbd>Z</kbd> for the whole system · <kbd>R</kbd> rewinds.`;
 }
 
 // ---------------- panels ----------------
@@ -2419,8 +2503,9 @@ function keysHTML() {
   const k = (a, b) => `<div class="k"><span>${a}</span><span>${b}</span></div>`;
   const gear = LEVELS[level].assistT && !assist ? 'landing gear' : 'anchor';
   let h = (P.charging || P.kickCharging) ? k('<kbd>Esc</kbd>', `<span class="warn">cancel ${P.charging ? 'jump' : 'kick'}</span>`) : '';
-  h += P.on ? k('<kbd>A</kbd><kbd>D</kbd>', 'walk') + k('<kbd>Space</kbd> hold', 'charge + preview') + k('release', 'jump')
-    : k('<kbd>Space</kbd> hold', 'kick (longer = stronger)') + k('+<kbd>W</kbd> / <kbd>S</kbd>', 'prograde / retro') + k('+<kbd>A</kbd> / <kbd>D</kbd>', 'radial in / out') +
+  h += P.on ? (P.charging ? k('<kbd>A</kbd><kbd>D</kbd>', 'aim the launch') + k('<kbd>W</kbd><kbd>S</kbd>', 'power up / down') + k('release', 'jump')
+      : k('<kbd>A</kbd><kbd>D</kbd>', 'walk') + k('<kbd>Space</kbd> hold', 'charge · aim · preview') + k('release', 'jump'))
+    : k('<kbd>R</kbd> hold', '<b>rewind</b> this flight') + k('<kbd>Space</kbd> hold', 'kick (longer = stronger)') + k('+<kbd>W</kbd> / <kbd>S</kbd>', 'prograde / retro') + k('+<kbd>A</kbd> / <kbd>D</kbd>', 'radial in / out') +
       k('+arrows', 'screen aim') + k('<kbd>Shift</kbd> hold', `${gear} (${fmt(T.anchorRange)})`) + k('<kbd>Q</kbd>', 'switch catch target') + k('<kbd>F</kbd> hold', assist ? 'warp ×8 (auto-brakes)' : 'warp ×8 — let go on ⚠');
   h += '<div class="sep"></div>' + k('<kbd>B</kbd>', 'Flight School') + k('<kbd>Z</kbd> · <kbd>M</kbd>', 'overview · map') + k('<kbd>T</kbd>', 'theme: ' + TH.name) + k('<kbd>N</kbd>', SND.on ? 'sound on' : 'sound muted');
   if (keysFull) h += k('<kbd>P</kbd>', 'forecast') + k('<kbd>V</kbd>', 'frame target') + k('<kbd>C</kbd>', 'camera spin') + k('<kbd>G</kbd>', 'assist: ' + (assist ? 'on' : 'off')) +
@@ -2501,7 +2586,16 @@ function frame(now) {
   }
   if ((flushT -= dt) <= 0) { flushT = 5; flushLog(false); }
   if (!paused) {   // charging runs on real time, so warp never rushes your aim
-    if (P.on && P.charging) { if (P.charge >= 1) P.fullHold += dt; P.charge = Math.min(1, P.charge + dt / T.chargeTime); }
+    if (P.on && P.charging) {
+      // power: fills on its own (slower than it used to); touch W/S (↑/↓) and you set it by hand — it stops filling
+      const pv = (keys.up || keys.w ? 1 : 0) - (keys.down || keys.s ? 1 : 0);
+      if (pv) P.chargeManual = true;
+      P.charge = P.chargeManual ? clamp(P.charge + pv * T.powRate * dt, 0, 1) : Math.min(1, P.charge + dt / T.chargeTime);
+      if (P.charge >= 1) P.fullHold += dt;
+      // aim: A/D (←/→) lean the launch away from straight up, at a steady rate
+      const tv = (keys.right || keys.d ? 1 : 0) - (keys.left || keys.a ? 1 : 0);
+      if (tv) P.tilt = clamp(P.tilt + tv * T.aimRate * dt, -T.aimTilt, T.aimTilt);
+    }
     if (P.kickCharging && !P.on) P.kickCharge = Math.min(1, P.kickCharge + dt / T.kickChargeTime);
   }
   const nev = paused ? null : nextEvent();
@@ -2524,6 +2618,8 @@ function frame(now) {
   for (let i = RINGS.length - 1; i >= 0; i--) if ((RINGS[i].life -= dt) <= 0) RINGS.splice(i, 1);
   if (hitStop > 0) { hitStop -= dt; acc = 0; }   // a beat of freeze on a perfect kick
   else if (paused) acc = 0; else acc += dt * warp * lerp(1, assist ? 0.3 : T.btScale, btAmt);   // bullet-time slows the sim
+  const rewinding = rewindTick(dt);
+  if (rewinding) acc = 0;
   while (acc >= T.step) { step(T.step); acc -= T.step; }
   if (planting) planting.t += dt;
   recordGhost();
@@ -2534,7 +2630,8 @@ function frame(now) {
   const E = helioE(), rawGain = P.on || paused || !dt ? 0 : (E - P.Eprev) / dt / Math.max(50, Math.hypot(P.vx, P.vy));
   P.Eprev = E; P.gainS = (P.gainS || 0) + (rawGain - (P.gainS || 0)) * Math.min(1, dt * 8);   // smoothed
   const gain = P.gainS;
-  if (!paused) { P.trail.push([P.x, P.y, gain]); if (P.trail.length > 320) P.trail.shift(); }
+  if (rewinding) P.trail.splice(-T.rewindRate);
+  else if (!paused) { P.trail.push([P.x, P.y, gain]); if (P.trail.length > 320) P.trail.shift(); }
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
   for (const p of popups) p.t += dt;

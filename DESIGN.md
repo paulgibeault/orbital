@@ -165,3 +165,20 @@ User: "the slowdown near events makes it too simple… when really booking it, t
   and green+blue channels are split apart and jittered, plus extra shake. Done with canvas `multiply` + `lighter` compositing
   (no `ctx.filter`/CSS filters, for Safari); applied before labels and panels so text stays crisp.
 - Bug caught in testing: an edit put a `//` comment mid-line in the tuning block, silently commenting out kickMinPow/kickChargeTime (NaN kicks).
+
+## Feeling in control: aimed launches, hand-set power, rewind (2026-11-20)
+User: "overly hard… launch controls are not very controllable on both direction and thrust… easy to get into orbits that are unhelpful."
+Log forensics (3 longest sessions, ~120 jumps): 55–85% of jumps were full charge (power was effectively all-or-nothing);
+26–36% of flights landed back on the world they left; the slowest 10% of flights drifted ~90 s.
+In the code, launch direction = where you stand, so aiming meant walking, at up to 5 rad/s (~290°/s) on a moon, so a 0.1 s tap moved your aim ~20–30°. Power filled in 0.7 s.
+- **Aim while charging:** holding Space plants your feet; **A/D lean the launch** up to ±63° (steady ~70°/s). An arrow shows the direction and power %.
+- **Power by hand:** fills on its own (now 1.2 s), but **W/S** take over and set it exactly (it stops filling).
+- **Touch slingshot:** hold ◉, then the stick points where you want to go, and how far you push sets the power.
+- **Walking is calmer:** ≤2.2 rad/s around any world.
+- **Rewind (hold R / ⟲ REWIND):** runs the current flight backwards. Worlds are on rails, so the whole sky rewinds exactly.
+  Let go anywhere to fly on from that moment. Go all the way back and you're on the launch pad with the same aim, in the same launch window,
+  and the clock waits while you still hold R. Score, combo, kicks and ghost recording rewind too (no farming). Physics going forward is untouched.
+- Sim (`/tmp`): from a random spot and moment on the launch world, share of moments with a clean launch (≤½ catch range) to the target.
+  Straight-up only → with aim: L1 Pip→Brindle 43→90%, Brindle→Kettle 40→98%, Kettle→Ada 20→60%, Bo→Outpost 8→25%;
+  L2 Dock→Ferry 18→78%, Lantern→Dock 5→50%, Dock→Tern 0→15% (still needs a slingshot, by design).
+- Test: `tools/t_launch.js` (in `npm test`).
